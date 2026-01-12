@@ -1,0 +1,20 @@
+When "direct" dependencies in gren.json is empty, the compiler crashes.
+(see gren.json.fails)
+
+% gren make Example
+Compiling ...-- MODULE NOT FOUND ------------------------------------------- src/Example.gren
+
+Yougren: Prelude.last: empty list
+CallStack (from HasCallStack):
+  error, called at libraries/base/GHC/List.hs:2004:3 in base:GHC.List
+  errorEmptyList, called at libraries/base/GHC/List.hs:212:13 in base:GHC.List
+  lastError, called at libraries/base/GHC/List.hs:207:29 in base:GHC.List
+  last, called at compiler/src/Reporting/Render/Code.hs:88:28 in gren-0.6.3-inplace-common:Reporting.Render.Code
+Detected problems in 1 module.
+
+
+But with "core" in "direct" dependencies it compiles:
+(see gren.json.works)
+
+ % gren make Example
+Success! Compiled 1 module.

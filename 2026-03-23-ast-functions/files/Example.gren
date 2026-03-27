@@ -1,0 +1,9 @@
+module Example exposing (withSig, noSig)
+
+
+withSig: Int
+
+withSig = 100
+
+
+noSig = 200

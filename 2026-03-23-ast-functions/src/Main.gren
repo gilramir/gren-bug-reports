@@ -1,0 +1,84 @@
+module Main exposing (main)
+
+import Compiler.Ast.Source as Src
+import Compiler.Parse.Module as PM
+import Compiler.Parse.Context as Context
+
+import Bytes exposing (Bytes)
+import FileSystem
+import FileSystem.Path as Path
+import Init
+import Node
+import Node exposing (Environment)
+import Stream
+import String.Parser.Advanced as Parser
+import Task exposing (Task)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Init.await FileSystem.initialize <| \fsPermission ->
+        when env.args is
+            [ _, _, filename ] ->
+                run fsPermission filename
+                    |> Task.onError (Task.succeed)
+                    |> Task.andThen (\str -> Stream.writeLineAsBytes str env.stdout)
+                    |> Task.onError (\serr -> Stream.writeLineAsBytes
+                        (Stream.errorToString serr) env.stderr)
+                    |> Task.onError (\_ -> Task.succeed env.stdout)
+                    |> Node.endSimpleProgram
+
+            _ ->
+                "Exactly one argument is required: the file name to read"
+                    |> (\str -> Stream.writeLineAsBytes str env.stderr)
+                    |> Task.onError (\_ -> Task.succeed env.stderr)
+                    |> Node.endSimpleProgram
+
+run : FileSystem.Permission -> String -> Task String String
+run fsPermission filename =
+    FileSystem.readFile fsPermission (Path.fromPosixString filename)
+        |> Task.map (Bytes.toString >> Maybe.withDefault "")
+        |> Task.onError (Task.succeed << FileSystem.errorToString)
+        |> Task.andThen (\fileContents -> runParser fileContents)
+        |> Task.andThen (\ast -> formatData ast fsPermission )
+
+
+runParser : String -> Task String Src.Module
+runParser fileContents =
+    let
+        parser = Parser.succeed (\ast payload -> {ast = ast, payload = payload })
+            |> Parser.keep PM.parser
+            |> Parser.keep Parser.getPayload
+    in
+    when Parser.run parser Context.empty fileContents is
+        Ok { ast = ast, payload = payload }->
+            Task.succeed ast
+        Err err -> Task.fail <| PM.errorsToString fileContents err
+
+formatData : Src.Module -> FileSystem.Permission -> Task String String
+formatData ast fsPerm  =
+    let
+        declStrings = Array.map mkDeclString ast.values
+    in
+        Task.succeed (String.join "\n" declStrings)
+
+
+mkDeclString : Src.ModuleDeclaration Src.Value -> String
+mkDeclString modDecl =
+    let
+        locName = modDecl.value.value.name
+        maybeSig = modDecl.value.value.signature
+        sigString = when maybeSig is
+            Nothing -> "<no signature>"
+            Just locType -> "signature @ row=" ++ (String.fromInt locType.start.row)
+                ++ ",col=" ++ (String.fromInt locType.start.col)
+
+    in
+        locName.value ++ " @ row=" ++ (String.fromInt locName.start.row)
+            ++ ",col=" ++ (String.fromInt locName.start.col)
+            ++ ", " ++ sigString

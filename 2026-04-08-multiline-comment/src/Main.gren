@@ -1,0 +1,87 @@
+module Main exposing (main)
+
+import Compiler.Ast.Source as Src
+import Compiler.Parse.Module as PM
+import Compiler.Parse.Context as Context exposing (CommentValue(..))
+
+import Bytes exposing (Bytes)
+import Dict
+import FileSystem
+import FileSystem.Path as Path
+import Init
+import Node
+import Node exposing (Environment)
+import Stream
+import String.Parser.Advanced as Parser
+import Task exposing (Task)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Init.await FileSystem.initialize <| \fsPermission ->
+        when env.args is
+            [ _, _, filename ] ->
+                run fsPermission filename
+                    |> Task.onError (Task.succeed)
+                    |> Task.andThen (\str -> Stream.writeLineAsBytes str env.stdout)
+                    |> Task.onError (\serr -> Stream.writeLineAsBytes
+                        (Stream.errorToString serr) env.stderr)
+                    |> Task.onError (\_ -> Task.succeed env.stdout)
+                    |> Node.endSimpleProgram
+
+            _ ->
+                "Exactly one argument is required: the file name to read"
+                    |> (\str -> Stream.writeLineAsBytes str env.stderr)
+                    |> Task.onError (\_ -> Task.succeed env.stderr)
+                    |> Node.endSimpleProgram
+
+run : FileSystem.Permission -> String -> Task String String
+run fsPermission filename =
+    FileSystem.readFile fsPermission (Path.fromPosixString filename)
+        |> Task.map (Bytes.toString >> Maybe.withDefault "")
+        |> Task.onError (Task.succeed << FileSystem.errorToString)
+        |> Task.andThen (\fileContents -> runParser fileContents)
+        |> Task.andThen (\ctx -> formatData ctx fsPermission )
+
+
+runParser : String -> Task String Context.Context
+runParser fileContents =
+    let
+        parser = Parser.succeed (\ast payload -> {ast = ast, payload = payload })
+            |> Parser.keep PM.parser
+            |> Parser.keep Parser.getPayload
+    in
+    when Parser.run parser Context.empty fileContents is
+        Ok { ast = ast, payload = payload }->
+            Task.succeed payload
+        Err err -> Task.fail <| PM.errorsToString fileContents err
+
+formatData : Context.Context -> FileSystem.Permission -> Task String String
+formatData ctx fsPerm  =
+    let
+        mlCommentStrings = Array.map mkMlCommentStringFromArray (Dict.values ctx.comments)
+    in
+        Task.succeed (String.join "\n" mlCommentStrings)
+
+
+mkMlCommentStringFromArray : (Array Context.Comment) -> String
+mkMlCommentStringFromArray comments =
+    let
+        strings = Array.map mkMlCommentString comments
+    in
+        String.join "\n" strings
+
+mkMlCommentString: Context.Comment -> String
+mkMlCommentString comment =
+    let
+        valueName = when comment.value is
+            Line s -> "Line <" ++ s ++ ">"
+            Block s -> "Block <" ++ s ++ ">"
+    in
+        valueName ++ " @ row=" ++ (String.fromInt comment.row) ++
+            " col=" ++ (String.fromInt comment.col)

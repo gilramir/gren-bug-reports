@@ -1,0 +1,17 @@
+module Example exposing (..)
+
+x: Int
+x = 1
+
+{- Example 1
+Second line -}
+
+{-
+Example 2
+Second line -}
+
+{-
+Example 3
+Second Line
+-}
+

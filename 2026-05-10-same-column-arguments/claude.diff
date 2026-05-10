@@ -1,0 +1,57 @@
+diff --git a/src/Compiler/Parse/Expression.gren b/src/Compiler/Parse/Expression.gren
+index f00d5ad..673d8f8 100644
+--- a/src/Compiler/Parse/Expression.gren
++++ b/src/Compiler/Parse/Expression.gren
+@@ -138,7 +138,7 @@ parser =
+                                     )
+ 
+                         indentationBumped =
+-                            Space.scopeIndentToLineStart completionParser
++                            Space.scopeIndentBelowLineStart completionParser
+                     in
+                     when firstTerm.value is
+                         AST.Var _ ->
+diff --git a/src/Compiler/Parse/Space.gren b/src/Compiler/Parse/Space.gren
+index 20a3260..ca0b152 100644
+--- a/src/Compiler/Parse/Space.gren
++++ b/src/Compiler/Parse/Space.gren
+@@ -2,6 +2,7 @@ module Compiler.Parse.Space exposing
+     ( Error (..)
+     , parser
+     , scopeIndentToLineStart
++    , scopeIndentBelowLineStart
+     , checkIndent
+     , errorToString
+     )
+@@ -145,7 +146,7 @@ validWhiteSpace char =
+     char == ' ' || char == '\n' || char == '\r'
+ 
+ 
+-{-| This will set `Context.indent` to be ´Context.startLine` for the duration of
++{-| This will set `Context.indent` to be `Context.startLine` for the duration of
+ the provided parser.
+ -}
+ scopeIndentToLineStart : Parser Context e v -> Parser Context e v
+@@ -155,6 +156,22 @@ scopeIndentToLineStart p =
+         .indent
+         (\newIndent payload -> { payload | indent = newIndent })
+         p
++
++
++{-| Like `scopeIndentToLineStart`, but uses `max(indent, lineStart - 1)` so tokens at
++the same column as the current line start are still accepted by `checkIndent`. This matches
++the Haskell compiler's behavior for function-argument parsing: multi-line arguments may
++appear at the same column as the function name, but the indent can never drop below the
++enclosing declaration's column (which prevents col-1 tokens on same-line calls from being
++treated as arguments).
++-}
++scopeIndentBelowLineStart : Parser Context e v -> Parser Context e v
++scopeIndentBelowLineStart p =
++    Parser.scopedUpdatePayload
++        (\pl -> max pl.indent (pl.lineStart - 1))
++        .indent
++        (\newIndent payload -> { payload | indent = newIndent })
++        p
+     
+ 
+ {-| Use this to check that the current indentation is valid. That is, the current

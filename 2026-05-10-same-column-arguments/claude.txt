@@ -1,0 +1,23 @@
+commit d72f04fb24195f82963f7c4c75f1aa49f2e778ca
+Author: Gilbert Ramirez <gram@alumni.rice.edu>
+Date:   Sat May 9 19:44:38 2026 -0500
+
+    Fix parser rejecting same-column arguments in multi-line function calls
+    
+    The expression parser used scopeIndentToLineStart when parsing arguments
+    to a Var/VarQual, which set indent = lineStart. checkIndent then required
+    col > indent (strictly greater), so a multi-line call like
+    
+        Browser.application
+        { init = init
+    
+    failed because { at col 5 is not > 5.
+    
+    The Haskell compiler accepts this layout. Fix by adding
+    scopeIndentBelowLineStart, which sets indent = max(indent, lineStart - 1).
+    The max prevents the indent from dropping below the enclosing declaration's
+    column, which would otherwise let col-1 tokens on a same-line call be
+    absorbed as spurious arguments.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+

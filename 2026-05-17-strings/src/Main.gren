@@ -1,0 +1,47 @@
+module Main exposing (main)
+
+import Expect
+import Test exposing (describe, test)
+import Test.Runner.Node exposing (Program, run)
+
+import String
+
+main : Program
+main =
+    run <|
+        describe "All Tests"
+
+            -- Bug 1: popLast crashes on a length-1 string
+            --
+            -- Expected: Just { last = 'x', rest = "" }
+            -- Actual:   RangeError: Invalid code point NaN
+            --           thrown from String.fromCodePoint inside _String_popLast
+            [ test "single-char" <|
+                \_ ->
+                    Expect.equal
+                        (Just { last = 'x', rest = "" })
+                        (String.popLast "x")
+
+             -- Bug 2: `rest` field contains the suffix instead of the prefix
+             --
+             -- Expected: Just { last = 'd', rest = "abc" }
+             -- Actual:   Just { last = 'd', rest = "d" }
+            , test "suffix/prefix" <|
+                \_ ->
+                    Expect.equal
+                        (Just { last = 'd', rest = "abc" })
+                        (String.popLast "abcd")
+
+
+              -- Bug 2 (variant): with a surrogate-pair (non-BMP) last character.
+              -- Exercises the second `rest` branch (line 49).
+              --
+              -- Expected: Just { last = '😀', rest = "hi " }
+              -- Actual:   Just { last = '😀', rest = " 😀" }  -- last two UTF-16 code units
+            , test "suffix/prefix surrogate-pair" <|
+                \_ ->
+                    Expect.equal
+                        (Just { last = '😀', rest = "hi " })
+                        (String.popLast "hi 😀")
+
+            ]

@@ -1,0 +1,134 @@
+module Broken exposing (..)
+
+
+{-| Positions where the Gren parser rejects a block comment that
+intuitively should be accepted as inter-token whitespace.
+
+This file is intended as a regression target for the compiler team.
+Today it does NOT parse: every "REJECTED" declaration below produces
+a parse error. The goal is that, once the parser is fixed, every
+declaration in this file parses and the file as a whole compiles.
+
+Each section pairs a "WORKS" example (which parses today) with the
+"REJECTED" case that should parse but doesn't, so the asymmetry is
+easy to see. Every declaration has a unique name so they can coexist
+in one module.
+
+Every REJECTED case currently produces the same shape of error: the
+parser bails on the failing declaration and then misinterprets the
+next `type` keyword as a variable name
+("Reserved word used as variable: 'type'"). Because the parser bails
+on the first error, only the first REJECTED case is reported on each
+run; comment them out one at a time to surface the next.
+
+The signature/alias-body asymmetry in sections 2–5 suggests the
+signature type parser consumes inter-token block comments correctly
+but the alias-body type parser does not.
+-}
+
+
+-- ============================================================
+-- 1. Comment between two type variables in a type / type alias header
+-- ============================================================
+
+-- REJECTED in both `type` and `type alias` headers.
+
+type RejectedTypeVarsUnion a {- c -} b
+    = RejectedTypeVarsUnion a b
+
+
+type alias RejectedTypeVarsAlias k {- c -} v =
+    Array { key : k, value : v }
+
+
+-- ============================================================
+-- 2. Comment around `->`
+-- ============================================================
+
+-- WORKS in a function signature.
+
+worksArrowInSig : Int {- c -} -> String
+worksArrowInSig _ =
+    ""
+
+
+-- REJECTED in a type alias body.
+
+type alias RejectedArrowInAlias =
+    Int {- c -} -> String -> Bool
+
+
+-- ============================================================
+-- 3. Comment between extension variable and `|` in an extensible record
+-- ============================================================
+
+-- WORKS in a function signature.
+
+worksExtPipeInSig : { a {- c -} | x : Int } -> Int
+worksExtPipeInSig _ =
+    0
+
+
+-- REJECTED in a type alias body.
+
+type alias RejectedExtPipeInAlias =
+    { a {- c -} | foo : Int, bar : String }
+
+
+-- ============================================================
+-- 4. Comment between `|` and the first field of an extensible record
+-- ============================================================
+
+-- WORKS in a function signature.
+
+worksExtAfterPipeInSig : { a | {- c -} x : Int } -> Int
+worksExtAfterPipeInSig _ =
+    0
+
+
+-- REJECTED in a type alias body.
+
+type alias RejectedExtAfterPipeInAlias =
+    { a | {- c -} foo : Int, bar : String }
+
+
+-- ============================================================
+-- 5. Comment between a type constructor and its first/next argument
+-- ============================================================
+
+-- WORKS in a function signature.
+
+worksNestedTypeAppInSig1 : Array {- c1 -} String -> Int
+worksNestedTypeAppInSig1 _ =
+    0
+
+
+worksNestedTypeAppInSig2 : Result {- c1 -} Int {- c2 -} String -> Int
+worksNestedTypeAppInSig2 _ =
+    0
+
+
+-- REJECTED in a type alias body.
+
+type alias RejectedNestedTypeAppInAlias =
+    Result {- c1 -} Int {- c2 -} (Array String)
+
+
+-- ============================================================
+-- 6. Comment between unary `-` and the negated expression
+-- ============================================================
+
+-- The natural unary-negation form `-x` (no space) parses fine; the
+-- issue is specifically that inserting a block comment in the gap
+-- between `-` and its operand is rejected.
+
+worksNegNoGap : Int -> Int
+worksNegNoGap x =
+    -x
+
+
+-- REJECTED.
+
+rejectedNegWithGap : Int -> Int
+rejectedNegWithGap x =
+    - {- between unary minus and operand -} x

@@ -1,0 +1,23 @@
+module Case6 exposing (..)
+
+
+{-| 6. Comment between unary `-` and the negated expression
+
+The natural unary-negation form `-x` (no space) parses fine; the issue
+is specifically that inserting a block comment in the gap between `-`
+and its operand is rejected.
+-}
+
+
+-- The `-x` form (no gap) parses fine.
+
+worksNegNoGap : Int -> Int
+worksNegNoGap x =
+    -x
+
+
+-- REJECTED.
+
+rejectedNegWithGap : Int -> Int
+rejectedNegWithGap x =
+    - {- between unary minus and operand -} x

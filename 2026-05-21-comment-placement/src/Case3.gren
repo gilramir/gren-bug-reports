@@ -1,0 +1,26 @@
+module Case3 exposing (..)
+
+
+{-| 3. Comment between extension variable and `|` in an extensible record
+
+A block comment that intuitively should be accepted as inter-token
+whitespace is rejected by the Gren parser. The "WORKS" example parses
+today; the "REJECTED" case should parse but doesn't.
+
+The signature/alias-body asymmetry suggests the signature type parser
+consumes inter-token block comments correctly but the alias-body type
+parser does not.
+-}
+
+
+-- WORKS in a function signature.
+
+worksExtPipeInSig : { a {- c -} | x : Int } -> Int
+worksExtPipeInSig _ =
+    0
+
+
+-- REJECTED in a type alias body.
+
+type alias RejectedExtPipeInAlias =
+    { a {- c -} | foo : Int, bar : String }

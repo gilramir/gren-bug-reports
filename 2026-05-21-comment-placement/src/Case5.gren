@@ -1,0 +1,31 @@
+module Case5 exposing (..)
+
+
+{-| 5. Comment between a type constructor and its first/next argument
+
+A block comment that intuitively should be accepted as inter-token
+whitespace is rejected by the Gren parser. The "WORKS" examples parse
+today; the "REJECTED" case should parse but doesn't.
+
+The signature/alias-body asymmetry suggests the signature type parser
+consumes inter-token block comments correctly but the alias-body type
+parser does not.
+-}
+
+
+-- WORKS in a function signature.
+
+worksNestedTypeAppInSig1 : Array {- c1 -} String -> Int
+worksNestedTypeAppInSig1 _ =
+    0
+
+
+worksNestedTypeAppInSig2 : Result {- c1 -} Int {- c2 -} String -> Int
+worksNestedTypeAppInSig2 _ =
+    0
+
+
+-- REJECTED in a type alias body.
+
+type alias RejectedNestedTypeAppInAlias =
+    Result {- c1 -} Int {- c2 -} (Array String)

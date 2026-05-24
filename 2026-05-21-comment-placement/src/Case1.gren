@@ -1,0 +1,20 @@
+module Case1 exposing (..)
+
+
+{-| 1. Comment between two type variables in a type / type alias header
+
+REJECTED in both `type` and `type alias` headers.
+
+A block comment that intuitively should be accepted as inter-token
+whitespace is rejected by the Gren parser. The goal is that, once the
+parser is fixed, every declaration in this file parses and the file as
+a whole compiles.
+-}
+
+
+type RejectedTypeVarsUnion a {- c -} b
+    = RejectedTypeVarsUnion a b
+
+
+type alias RejectedTypeVarsAlias k {- c -} v =
+    Array { key : k, value : v }

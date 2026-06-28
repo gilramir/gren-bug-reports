@@ -3,7 +3,7 @@
     "platform": "common",
     "name": "example/package",
     "license": "BSD-3-Clause",
-    "summary": "this summary line is not that long! ... but it is longer than expect at 80 chars",
+    "summary": "this summary line is not that long... but it is longer than expected at 80 chars",
     "source-directories": [
         "src"
     ],

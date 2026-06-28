@@ -1,0 +1,18 @@
+{
+    "type": "package",
+    "platform": "common",
+    "name": "example/package",
+    "license": "BSD-3-Clause",
+    "summary": "this summary line is not that long! ... but it is longer than expect at 80 chars",
+    "source-directories": [
+        "src"
+    ],
+    "version": "1.0.0",
+    "exposed-modules": [
+            "Main"
+    ],
+    "gren-version": "0.6.0 <= v < 0.7.0",
+    "dependencies": {
+        "gren-lang/core": "7.4.0 <= v < 8.0.0"
+    }
+}

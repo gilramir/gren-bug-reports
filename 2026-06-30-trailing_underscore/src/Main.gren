@@ -1,0 +1,11 @@
+module Main exposing (good, bad)
+
+import Array
+
+good : Int -> Int -> Int
+good as_ bs =
+    as_ + bs
+
+bad : Int -> Int -> Int -> Int
+bad x as_ bs =
+    x + as_ + bs

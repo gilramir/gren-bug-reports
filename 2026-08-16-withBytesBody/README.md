@@ -21,6 +21,7 @@ with `withBytesBody` puts 8192 bytes on the wire regardless of how few were
 received, and the extra bytes are whatever else is in the pool — other requests'
 data, in a server that handles more than one.
 
+- **Filed as:** [gren-lang/node#57](https://github.com/gren-lang/node/issues/57)
 - **Package:** `gren-lang/node` (`HttpClient` kernel)
 - **Versions:** gren 0.6.6, gren-lang/core 7.4.2, gren-lang/node 6.1.3, Node.js
   v25.1.0, Linux x86-64
@@ -175,12 +176,13 @@ src/Gren/Kernel/HttpClient.js:330:  return new Uint8Array(bytes.buffer);
 
 ## Related
 
-The sibling report for another issue in `2026-08-16-flatten/` is the same mistake —
-`new Uint8Array(view.buffer)`, with the offset dropped — in `gren-lang/core`'s
-`Bytes.flatten`. It behaves differently there: `flatten` takes its length from
-`byteLength` and only its *contents* from the wrong place, so the result is the
-right size and the wrong bytes, which is harder to notice than this one. They
-are independent fixes in different packages.
+The sibling report in `2026-08-16-flatten/`
+([gren-lang/node#58](https://github.com/gren-lang/node/issues/58)) is the same
+mistake — `new Uint8Array(view.buffer)`, with the offset dropped — in
+`gren-lang/core`'s `Bytes.flatten`. It behaves differently there: `flatten`
+takes its length from `byteLength` and only its *contents* from the wrong place,
+so the result is the right size and the wrong bytes, which is harder to notice
+than this one. They are independent fixes in different packages.
 
 Worth knowing here because `Bytes.flatten` is the obvious way to copy a `Bytes`
 before handing it to `withBytesBody`, and it does not work. `Bytes.Encode.bytes`

@@ -34,6 +34,7 @@ loop bound both use `byteLength`, so the result is exactly as long as it should
 be — and filled with whatever precedes the data.
 
 
+- **Filed as:** [gren-lang/node#58](https://github.com/gren-lang/node/issues/58)
 - **Package:** `gren-lang/core` (`Bytes` kernel)
 - **Versions:** gren 0.6.6, gren-lang/core 7.4.2, gren-lang/node 6.1.3, Node.js
   v25.1.0, Linux x86-64
@@ -151,10 +152,12 @@ another request's or another child's data.
 
 ## Related
 
-The sibling report in `2026-08-16-withBytesBody/` is the same mistake —
-`new Uint8Array(view.buffer)`, with the offset dropped — in `gren-lang/node`'s
-`HttpClient` kernel. It behaves differently there: the length is taken from the
-buffer too, so a small request body goes out as the whole 8 KiB pool rather than
-as the right number of wrong bytes. The two are independent fixes in different
-packages. I found this flattne bug while checking whether `Bytes.flatten` would make a
-safe workaround for the withBytesBody bug; it would not.
+The sibling report in `2026-08-16-withBytesBody/`
+([gren-lang/node#57](https://github.com/gren-lang/node/issues/57)) is the same
+mistake — `new Uint8Array(view.buffer)`, with the offset dropped — in
+`gren-lang/node`'s `HttpClient` kernel. It behaves differently there: the length
+is taken from the buffer too, so a small request body goes out as the whole
+8 KiB pool rather than as the right number of wrong bytes. The two are independent
+fixes in different packages. I found this flatten bug while checking whether
+`Bytes.flatten` would make a safe workaround for the withBytesBody bug; it would
+not.

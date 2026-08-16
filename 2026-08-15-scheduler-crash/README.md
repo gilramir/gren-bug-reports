@@ -26,7 +26,8 @@ state record.
 ./run.sh
 ```
 
-That builds and drives both programs. Expected output:
+That builds and drives two programs. A Control program which works fine, and a
+Crash program which crashes. The difference between the 2 programs is minimal.
 
 ```
 === Crash (HttpServer + one Node subscription) — expected: dies on request 2
@@ -175,8 +176,5 @@ Any long-lived program that combines an effect manager using `Task.map2`/`map3` 
 `onEffects` with frequent effect dispatches. Concretely: a `gren-lang/node` HTTP
 server cannot subscribe to `Node.onSignalTerminate`, which is what you need to shut
 down cleanly on SIGTERM — the normal requirement for a container under
-Kubernetes/Knative, where the process is PID 1 and gets no default signal handling.
+Kubernetes, where the process is PID 1 and gets no default signal handling.
 
-Found in https://github.com/gilramir/gren-openshift-serverless (branch
-`knative-serving`), which works around it by installing the SIGTERM handler in the
-container entrypoint instead.

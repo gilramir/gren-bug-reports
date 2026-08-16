@@ -1,0 +1,160 @@
+module Relay exposing (main)
+
+{-| One program, one port, three paths.
+
+  - `POST /echo` reports how many bytes it actually received. This is the
+    observer; nothing about it is under test.
+  - `POST /relay` takes the request body — a `Bytes` that came from
+    `HttpServer`, and is therefore a *view* into Node's 8 KiB buffer pool — and
+    forwards it to `/echo` with `HttpClient.withBytesBody`. This is the bug.
+  - `POST /relay-compact` does the same, but re-encodes the body through
+    `Bytes.Encode.bytes` first, which allocates a buffer of exactly the right
+    width at offset zero. This is the control: one line different, correct
+    result.
+
+Each relay reply is `sent=<n> received=<n>`, so the two numbers can be compared
+with nothing but curl.
+
+-}
+
+import Bytes exposing (Bytes)
+import Bytes.Encode
+import HttpClient
+import HttpServer
+import HttpServer.Response as Response
+import Init
+import Node
+import Task exposing (Task)
+
+
+port_ : Int
+port_ =
+    8086
+
+
+type alias Model =
+    { permission : HttpClient.Permission
+    , server : Maybe HttpServer.Server
+    }
+
+
+type Msg
+    = ServerStarted (Result HttpServer.ServerError HttpServer.Server)
+    | GotRequest { request : HttpServer.Request, response : Response.Response }
+    | Relayed { response : Response.Response, sent : Int, outcome : Result String Int }
+
+
+main : Node.Program Model Msg
+main =
+    Node.defineProgram
+        { init = init
+        , update = update
+        , subscriptions = subscriptions
+        }
+
+
+init : Node.Environment -> Init.Task { model : Model, command : Cmd Msg }
+init _ =
+    Init.await HttpClient.initialize <|
+        \clientPermission ->
+            Init.await HttpServer.initialize <|
+                \serverPermission ->
+                    Node.startProgram
+                        { model =
+                            { permission = clientPermission
+                            , server = Nothing
+                            }
+                        , command =
+                            HttpServer.createServer serverPermission
+                                { host = "127.0.0.1", port_ = port_ }
+                                |> Task.attempt ServerStarted
+                        }
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    when model.server is
+        Just server ->
+            HttpServer.onRequest server
+                (\request response -> GotRequest { request = request, response = response })
+
+        Nothing ->
+            Sub.none
+
+
+update : Msg -> Model -> { model : Model, command : Cmd Msg }
+update msg model =
+    when msg is
+        ServerStarted (Ok server) ->
+            { model = { model | server = Just server }, command = Cmd.none }
+
+        ServerStarted (Err _) ->
+            { model = model, command = Node.exitWithCode 1 }
+
+        GotRequest { request, response } ->
+            let
+                sent =
+                    Bytes.length request.body
+            in
+            if request.url.path == "/echo" then
+                -- The observer: say what actually arrived.
+                { model = model
+                , command =
+                    response
+                        |> Response.setStatus 200
+                        |> Response.setBody (String.fromInt sent)
+                        |> Response.send
+                }
+
+            else
+                let
+                    -- THE ONLY DIFFERENCE between the two relay paths.
+                    body =
+                        if request.url.path == "/relay-compact" then
+                            Bytes.Encode.encode (Bytes.Encode.bytes request.body)
+
+                        else
+                            request.body
+                in
+                { model = model
+                , command =
+                    forward model.permission body
+                        |> Task.attempt
+                            (\outcome ->
+                                Relayed
+                                    { response = response
+                                    , sent = sent
+                                    , outcome = outcome
+                                    }
+                            )
+                }
+
+        Relayed { response, sent, outcome } ->
+            let
+                received =
+                    when outcome is
+                        Ok count ->
+                            String.fromInt count
+
+                        Err err ->
+                            "error: " ++ err
+            in
+            { model = model
+            , command =
+                response
+                    |> Response.setStatus 200
+                    |> Response.setBody
+                        ("sent=" ++ String.fromInt sent ++ " received=" ++ received)
+                    |> Response.send
+            }
+
+
+{-| POST the bytes to `/echo` on this same server, and read back the count. -}
+forward : HttpClient.Permission -> Bytes -> Task String Int
+forward permission body =
+    HttpClient.post ("http://127.0.0.1:" ++ String.fromInt port_ ++ "/echo")
+        |> HttpClient.withBytesBody "application/octet-stream" body
+        |> HttpClient.expectString
+        |> HttpClient.send permission
+        |> Task.mapError HttpClient.errorToString
+        |> Task.map (\response -> String.toInt response.data |> Maybe.withDefault -1)

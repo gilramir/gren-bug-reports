@@ -1,0 +1,87 @@
+module Crash exposing (main)
+
+{-| Minimal reproduction: an `HttpServer` that also holds one `Node`
+subscription dies on the *second* request.
+
+    Started on :8085.  First request  -> 204.
+                       Second request -> the process crashes with
+                       "TypeError: Cannot read properties of undefined (reading '$')"
+                       inside Node.onEffects.
+
+Three ingredients are each necessary (see Control.gren for the same program
+without the third):
+
+ 1. the reply is produced through a `Task.perform`, so each request causes two
+    effect dispatches rather than one;
+ 2. the reply carries no body, which is what lines the two dispatches up in the
+    same scheduler drain;
+ 3. *any* `Node` subscription. `Node.onEffects` builds its next state with
+    `Task.map3`, which goes through `_Scheduler_concurrent`.
+
+-}
+
+import HttpServer
+import HttpServer.Response as Response
+import Init
+import Node
+import Task
+
+
+type alias Model =
+    { server : Maybe HttpServer.Server }
+
+
+type Msg
+    = Started (Result HttpServer.ServerError HttpServer.Server)
+    | GotRequest Response.Response
+    | Respond Response.Response
+    | Shutdown
+
+
+main : Node.Program Model Msg
+main =
+    Node.defineProgram
+        { init =
+            \_ ->
+                Init.await HttpServer.initialize <|
+                    \permission ->
+                        Node.startProgram
+                            { model = { server = Nothing }
+                            , command =
+                                HttpServer.createServer permission
+                                    { host = "0.0.0.0", port_ = 8085 }
+                                    |> Task.attempt Started
+                            }
+        , update =
+            \msg model ->
+                when msg is
+                    Started (Ok server) ->
+                        { model = { model | server = Just server }, command = Cmd.none }
+
+                    Started (Err _) ->
+                        { model = model, command = Cmd.none }
+
+                    GotRequest response ->
+                        { model = model
+                        , command =
+                            Task.succeed (Response.setStatus 204 response)
+                                |> Task.perform Respond
+                        }
+
+                    Respond response ->
+                        { model = model, command = Response.send response }
+
+                    Shutdown ->
+                        { model = model, command = Node.exitWithCode 0 }
+        , subscriptions =
+            \model ->
+                Sub.batch
+                    [ when model.server is
+                        Just server ->
+                            HttpServer.onRequest server (\_ response -> GotRequest response)
+
+                        Nothing ->
+                            Sub.none
+                    , Node.onSignalTerminate Shutdown
+                    ]
+        }

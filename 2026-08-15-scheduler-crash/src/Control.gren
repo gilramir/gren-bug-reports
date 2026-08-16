@@ -1,0 +1,74 @@
+module Control exposing (main)
+
+{-| Control for Crash.gren: byte-for-byte the same program with the
+`Node.onSignalTerminate` subscription removed (the `Shutdown` message is left in
+place so nothing else differs). Serves any number of requests without dying.
+
+Runs on :8084.
+
+-}
+
+import HttpServer
+import HttpServer.Response as Response
+import Init
+import Node
+import Task
+
+
+type alias Model =
+    { server : Maybe HttpServer.Server }
+
+
+type Msg
+    = Started (Result HttpServer.ServerError HttpServer.Server)
+    | GotRequest Response.Response
+    | Respond Response.Response
+    | Shutdown
+
+
+main : Node.Program Model Msg
+main =
+    Node.defineProgram
+        { init =
+            \_ ->
+                Init.await HttpServer.initialize <|
+                    \permission ->
+                        Node.startProgram
+                            { model = { server = Nothing }
+                            , command =
+                                HttpServer.createServer permission
+                                    { host = "0.0.0.0", port_ = 8084 }
+                                    |> Task.attempt Started
+                            }
+        , update =
+            \msg model ->
+                when msg is
+                    Started (Ok server) ->
+                        { model = { model | server = Just server }, command = Cmd.none }
+
+                    Started (Err _) ->
+                        { model = model, command = Cmd.none }
+
+                    GotRequest response ->
+                        { model = model
+                        , command =
+                            Task.succeed (Response.setStatus 204 response)
+                                |> Task.perform Respond
+                        }
+
+                    Respond response ->
+                        { model = model, command = Response.send response }
+
+                    Shutdown ->
+                        { model = model, command = Node.exitWithCode 0 }
+        , subscriptions =
+            \model ->
+                Sub.batch
+                    [ when model.server is
+                        Just server ->
+                            HttpServer.onRequest server (\_ response -> GotRequest response)
+
+                        Nothing ->
+                            Sub.none
+                    ]
+        }

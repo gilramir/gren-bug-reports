@@ -33,8 +33,6 @@ away and starts at index 0 of the whole buffer. `requiredSize` and the inner
 loop bound both use `byteLength`, so the result is exactly as long as it should
 be — and filled with whatever precedes the data.
 
-That combination is what makes it worth reporting: the value that comes back has
-the right type and the right length, and nothing about it looks wrong.
 
 - **Package:** `gren-lang/core` (`Bytes` kernel)
 - **Versions:** gren 0.6.6, gren-lang/core 7.4.2, gren-lang/node 6.1.3, Node.js
@@ -91,17 +89,17 @@ the control: Bytes.fromString owns its buffer outright
   flatten [it]    length=11 text="HELLO-WORLD"
 ```
 
-Take the first block. The child's stdout sits at `byteOffset` 8, so the copy
+In the first block, the child's stdout sits at `byteOffset` 8, so the copy
 starts 8 bytes too early: `flatten [it]` is 8 bytes of unrelated pool contents
 followed by the first 3 bytes of the actual data (`HEL`), and then it stops —
 11 bytes, as promised, of which 3 are ours.
 
-The second block is worse than it looks. Both children's output is in the same
+The second block is worse. Both children's output is in the same
 pool at different offsets, and *both* reads start at index 0, so the second
 chunk contributes the first chunk's neighbourhood rather than its own bytes:
 one child's data appears where another's was asked for.
 
-`run.sh` also prints the same thing in plain node, without Gren in the way:
+`run.sh` also reproduces the logic in javascript directly, just as an example
 
 ```
 child stdout : byteLength 11  byteOffset 8  buffer.byteLength 8192
@@ -112,7 +110,7 @@ what it should read : "HELLO-WORLD"
 ## Why it is easy to miss
 
 Every obvious way to *construct* a `Bytes` in a test produces a buffer the value
-owns outright, at offset 0, where the bug cannot show:
+owns outright, at offset 0, where the bug cannot happen:
 
 - `Bytes.fromString` — `TextEncoder.encode` returns an exact-width array;
 - `Bytes.Encode.encode` — allocates `new ArrayBuffer(getLength(encoder))`;

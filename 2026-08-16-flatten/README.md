@@ -1,4 +1,4 @@
-# `Bytes.flatten` reads each input from offset 0 of its backing buffer
+# `Bytes.flatten` reads each input from offset 0 of its backing buffer even when it shouldn't
 
 `_Bytes_flatten` copies the right *number* of bytes from the wrong *place*:
 

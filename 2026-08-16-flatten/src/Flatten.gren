@@ -1,0 +1,109 @@
+module Flatten exposing (main)
+
+{-| `Bytes.flatten` returns the right number of bytes and the wrong bytes,
+whenever an input is a view into a larger buffer.
+
+A `Bytes` is a `DataView`: a window onto an `ArrayBuffer`, described by
+`byteOffset` and `byteLength`. `_Bytes_flatten` reads each input as
+`new Uint8Array(arrayOfBytes[i].buffer)`, which starts at index 0 of the whole
+buffer and ignores where the window actually begins. It then copies
+`byteLength` bytes from there, so the *length* comes out right and the
+*contents* come from somewhere else in the buffer.
+
+To see it you need a `Bytes` that is a view, and this program gets one without
+any HTTP, sockets or files: `ChildProcess.run` hands back the child's stdout as
+a `DataView` that preserves `byteOffset`, and Node serves small allocations out
+of a shared 8 KiB pool, so the offset is almost never zero.
+
+    gren make Flatten --output flatten
+    node flatten
+
+-}
+
+import Bytes exposing (Bytes)
+import ChildProcess
+import Init
+import Node
+import Stream
+import Task exposing (Task)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram
+        (\env ->
+            Init.await ChildProcess.initialize
+                (\permission ->
+                    Node.endSimpleProgram (report env permission)
+                )
+        )
+
+
+report : Node.Environment -> ChildProcess.Permission -> Task Never {}
+report env permission =
+    capture permission "HELLO-WORLD"
+        |> Task.andThen
+            (\viewed ->
+                capture permission "SECOND-CHUNK"
+                    |> Task.andThen
+                        (\alsoViewed ->
+                            let
+                                -- The control: `Bytes.fromString` allocates an
+                                -- exact-width buffer at offset zero, so it is
+                                -- not a view and `flatten` handles it fine.
+                                owned =
+                                    Bytes.fromString "HELLO-WORLD"
+                            in
+                            [ "a view from ChildProcess.run (byteOffset is almost never 0)"
+                            , describe "  input          " viewed
+                            , describe "  flatten [it]   " (Bytes.flatten [ viewed ])
+                            , ""
+                            , "two views concatenated"
+                            , describe "  inputs         " (Bytes.fromString "HELLO-WORLDSECOND-CHUNK")
+                            , describe "  flatten [a, b] " (Bytes.flatten [ viewed, alsoViewed ])
+                            , ""
+                            , "the control: Bytes.fromString owns its buffer outright"
+                            , describe "  input          " owned
+                            , describe "  flatten [it]   " (Bytes.flatten [ owned ])
+                            ]
+                                |> String.join "\n"
+                                |> write env
+                        )
+            )
+        |> Task.onError (\err -> write env ("could not run the child process: " ++ err))
+
+
+{-| Run `printf <text>` and keep its stdout, which arrives as a view. -}
+capture : ChildProcess.Permission -> String -> Task String Bytes
+capture permission text =
+    ChildProcess.run permission "printf" [ "%s", text ] ChildProcess.defaultRunOptions
+        |> Task.map .stdout
+        |> Task.mapError (\_ -> "printf failed")
+
+
+{-| Length and contents, so the two can be compared at a glance. -}
+describe : String -> Bytes -> String
+describe label payload =
+    label
+        ++ " length="
+        ++ String.fromInt (Bytes.length payload)
+        ++ " text="
+        ++ (Bytes.toString payload
+                |> Maybe.map (\text -> "\"" ++ visible text ++ "\"")
+                |> Maybe.withDefault "<not valid UTF-8>"
+           )
+
+
+{-| Render NUL as an escape so the output survives a terminal. -}
+visible : String -> String
+visible text =
+    text
+        |> String.split "\u{0000}"
+        |> String.join "\\0"
+
+
+write : Node.Environment -> String -> Task x {}
+write env text =
+    Stream.writeLineAsBytes text env.stdout
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

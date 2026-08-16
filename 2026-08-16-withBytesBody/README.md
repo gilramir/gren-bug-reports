@@ -27,8 +27,13 @@ data, in a server that handles more than one.
 
 ## Reproducing
 
+A minimal reproduction is in the https://github.com/gilramir/gren-bug-reports
+repo.
+
 ```sh
-./run.sh
+$ git clone https://github.com/gilramir/gren-bug-reports.git
+$ cd gren-bug-reports/2026-08-16-withBytesBody
+$ ./run.sh
 ```
 
 `src/Relay.gren` is one ~160-line program serving three paths on `:8086`:
@@ -39,8 +44,56 @@ data, in a server that handles more than one.
 - `POST /relay-compact` does the same after re-encoding the body through
   `Bytes.Encode.bytes`, which allocates an exact-width buffer at offset zero.
 
-The two relay paths differ by one expression and nothing else. Each answers
-`sent=<n> received=<n>`.
+In the Relay.gren, `request.body` goes straight to
+`withBytesBody`, and the length is measured on both ends with `Bytes.length`:
+
+```gren
+GotRequest { request, response } ->
+    let
+        sent =
+            Bytes.length request.body       -- what we were handed
+    in
+    if request.url.path == "/echo" then
+        -- The observer: say what actually arrived.
+        { model = model
+        , command =
+            response
+                |> Response.setStatus 200
+                |> Response.setBody (String.fromInt sent)
+                |> Response.send
+        }
+
+    else
+        let
+            -- THE ONLY DIFFERENCE between the two relay paths.
+            body =
+                if request.url.path == "/relay-compact" then
+                    Bytes.Encode.encode (Bytes.Encode.bytes request.body)
+
+                else
+                    request.body
+        in
+        ...
+
+
+forward : HttpClient.Permission -> Bytes -> Task String Int
+forward permission body =
+    HttpClient.post ("http://127.0.0.1:" ++ String.fromInt port_ ++ "/echo")
+        |> HttpClient.withBytesBody "application/octet-stream" body
+        |> HttpClient.expectString
+        |> HttpClient.send permission
+        |> Task.mapError HttpClient.errorToString
+        |> Task.map (\response -> String.toInt response.data |> Maybe.withDefault -1)
+```
+
+Note that `Bytes.length request.body` already reports the right number — the
+`DataView`'s `byteLength` is intact, and every Gren-level operation agrees with
+it. Only the kernel's `new Uint8Array(bytes.buffer)` disagrees, which is why
+this cannot be caught from inside the language.
+
+`Bytes.Encode.encode (Bytes.Encode.bytes …)` on the `/relay-compact` path is a
+copy into a buffer the value owns, fixing the behavior.
+Each path answers `sent=<n> received=<n>`.
 
 ```
 === POST /relay — withBytesBody on the request body (expected: sent == received)
@@ -80,14 +133,14 @@ Buffer.poolSize = 8192 -> pooled when size < 4096
  4096 byteOffset     0  buffer.byteLength 4096  new Uint8Array(b.buffer).byteLength 4096
 ```
 
-So the bug affects **small** payloads and spares large ones, which is the
-opposite of where anyone looks first. A test suite that exercises `withBytesBody`
+So the bug affects **small** payloads and spares large ones.
+A test suite that exercises `withBytesBody`
 with a `Bytes.fromString` literal will also miss it, because
 `Bytes.fromString` produces a fresh exact-width buffer at offset zero.
 
-## The fix
+## Suggested fix
 
-`HttpServer` already does this correctly two files away —
+`HttpServer` already does this correctly;
 `_HttpServer_setBodyAsBytes` passes all three arguments:
 
 ```js
@@ -122,7 +175,7 @@ src/Gren/Kernel/HttpClient.js:330:  return new Uint8Array(bytes.buffer);
 
 ## Related
 
-The sibling report in `2026-08-16-flatten/` is the same mistake —
+The sibling report for another issue in `2026-08-16-flatten/` is the same mistake —
 `new Uint8Array(view.buffer)`, with the offset dropped — in `gren-lang/core`'s
 `Bytes.flatten`. It behaves differently there: `flatten` takes its length from
 `byteLength` and only its *contents* from the wrong place, so the result is the
@@ -134,8 +187,6 @@ before handing it to `withBytesBody`, and it does not work. `Bytes.Encode.bytes`
 does, which is what `/relay-compact` uses.
 
 ## Impact
-
-Two separate problems, and the second is the serious one.
 
 1. **Wrong data.** Any program that receives bytes and forwards them — a proxy,
    a webhook relay, an event forwarder — sends a payload that neither matches

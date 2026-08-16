@@ -42,15 +42,40 @@ the right type and the right length, and nothing about it looks wrong.
 
 ## Reproducing
 
+A minimal reproduction is in the https://github.com/gilramir/gren-bug-reports
+repo.
+
 ```sh
-./run.sh
+$ git clone https://github.com/gilramir/gren-bug-reports.git
+$ cd gren-bug-reports/2026-08-16-flatten
+$ ./run.sh
 ```
 
-No ports, no sockets, no files. `src/Flatten.gren` gets a view-backed `Bytes`
+In that repo, `src/Flatten.gren` gets a view-backed `Bytes`
 from `ChildProcess.run`, which hands back the child's stdout as a `DataView`
 preserving `byteOffset`, and Node serves small allocations out of a shared 8 KiB
-pool — so the offset is almost never zero. (`\0` below is a NUL byte, escaped by
-the program so the output survives a terminal.)
+pool — so the offset is almost never zero:
+
+```gren
+capture : ChildProcess.Permission -> String -> Task String Bytes
+capture permission text =
+    ChildProcess.run permission "printf" [ "%s", text ] ChildProcess.defaultRunOptions
+        |> Task.map .stdout
+```
+
+The rest is one `flatten` call each way, with nothing in between:
+
+```gren
+-- viewed / alsoViewed : stdout from `capture` — views into Node's pool
+-- owned               : Bytes.fromString "HELLO-WORLD" — its own buffer, offset 0
+
+Bytes.flatten [ viewed ]
+Bytes.flatten [ viewed, alsoViewed ]
+Bytes.flatten [ owned ]
+```
+
+The program prints each input and its `flatten` alongside as
+`length=<n> text=<...>`, escaping NUL as `\0` so the output survives a terminal:
 
 ```
 a view from ChildProcess.run (byteOffset is almost never 0)
@@ -66,9 +91,10 @@ the control: Bytes.fromString owns its buffer outright
   flatten [it]    length=11 text="HELLO-WORLD"
 ```
 
-Read the first line: the child's stdout sits at `byteOffset` 8, so the copy
-takes 8 bytes of unrelated pool contents followed by the first 3 bytes of the
-actual data (`HEL`), and stops — 11 bytes, as promised, of which 3 are ours.
+Take the first block. The child's stdout sits at `byteOffset` 8, so the copy
+starts 8 bytes too early: `flatten [it]` is 8 bytes of unrelated pool contents
+followed by the first 3 bytes of the actual data (`HEL`), and then it stops —
+11 bytes, as promised, of which 3 are ours.
 
 The second block is worse than it looks. Both children's output is in the same
 pool at different offsets, and *both* reads start at index 0, so the second
@@ -97,7 +123,7 @@ request bodies, `FileSystem` reads through `Buffer.allocUnsafe`. So `flatten` is
 correct on everything a unit test is likely to hand it, and wrong on most things
 a running program will.
 
-## The fix
+## Suggested fix
 
 Give the `Uint8Array` the window it was given:
 
@@ -119,15 +145,11 @@ here.
 ## Impact
 
 Silent data corruption in anything that concatenates bytes that came from
-outside the program — joining a response read in chunks, assembling a file from
-reads, building a payload out of a child process's output. The length checks
-out, so the corruption surfaces later and somewhere else: a failed signature
-verification, a parse error, a truncated image.
+outside the program.
 
 There is a confidentiality edge too. The bytes substituted in are the rest of a
 shared pool, which in a process handling more than one thing at a time can hold
-another request's or another child's data. A program can hand out bytes it never
-received.
+another request's or another child's data.
 
 ## Related
 
@@ -136,5 +158,5 @@ The sibling report in `2026-08-16-withBytesBody/` is the same mistake —
 `HttpClient` kernel. It behaves differently there: the length is taken from the
 buffer too, so a small request body goes out as the whole 8 KiB pool rather than
 as the right number of wrong bytes. The two are independent fixes in different
-packages. I found this one while checking whether `Bytes.flatten` would make a
-safe workaround for that one; it would not.
+packages. I found this flattne bug while checking whether `Bytes.flatten` would make a
+safe workaround for the withBytesBody bug; it would not.

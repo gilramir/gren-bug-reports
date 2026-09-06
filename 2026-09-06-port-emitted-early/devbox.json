@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.18.0/.schema/devbox.schema.json",
+  "packages": {
+    "gren": "0.6",
+    "python3": "latest"
+  },
+  "shell": {
+    "scripts": {
+      "build": [
+        "gren make Main --output=main.js"
+      ],
+      "serve": [
+        "python3 -m http.server 8000"
+      ]
+    }
+  }
+}

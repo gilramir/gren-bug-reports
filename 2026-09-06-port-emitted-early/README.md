@@ -130,7 +130,7 @@ would cost nothing.
 
 ---
 
-- **Filed as:** not yet filed
+- **Filed as:** [gren-lang/compiler#387](https://github.com/gren-lang/compiler/issues/387)
 - **Package:** `gren-lang/compiler`
 - **Versions:** gren 0.6.6, gren-lang/core 7.4.2, Firefox 153, Node.js v22.23.2,
   Linux x86-64

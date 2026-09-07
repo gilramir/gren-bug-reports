@@ -323,6 +323,6 @@ too, and would hide #138 rather than sit beside it.
 
 ---
 
-- **Filed as:** not yet filed
+- **Filed as:** [gren-lang/core#144](https://github.com/gren-lang/core/issues/144)
 - **Package:** `gren-lang/core`
 - **Versions:** gren 0.6.6, gren-lang/core 7.4.2, Node.js v22, Linux x86-64

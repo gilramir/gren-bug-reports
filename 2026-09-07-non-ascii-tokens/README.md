@@ -36,8 +36,23 @@ decision belonging to the language being parsed rather than to ASCII.
 $ ./run.sh
 ```
 
-Two programs. Neither prints any commentary; this file is where the commentary
+Three programs. None prints any commentary; this file is where the commentary
 is.
+
+### `src/Identifiers.gren` — the premise
+
+A module whose every identifier is non-ASCII. It exists to be compiled: if this
+does not build, nothing else in this report matters. It prints `7`.
+
+```gren
+café : Int
+ｚebra : Int
+𝐚stral : Int
+
+type Týpe
+    = Éins
+    | Zwölf
+```
 
 ### `src/Boundary.gren` — `keyword` on its own
 
@@ -160,6 +175,94 @@ illustrative code:
 ```
 
 The illustration is what a caller wants. The implementation hardcodes one.
+
+## Where this already bites: the two Gren parsers disagree
+
+Non-ASCII identifiers are legal Gren, deliberately. `src/Identifiers.gren` is a
+module whose every name is one, and it compiles:
+
+```gren
+café : Int
+ｚebra : Int
+𝐚stral : Int
+
+type Týpe
+    = Éins
+    | Zwölf
+```
+
+`compiler/src/Parse/Variable.hs` is where that is decided, and it is not an
+accident of a byte-oriented scanner — there is a hand-written branch per UTF-8
+width, each one decoding the codepoint before asking about it:
+
+```haskell
+getInnerWidthHelp :: Ptr Word8 -> Ptr Word8 -> Word8 -> Int
+getInnerWidthHelp pos _ word
+  | 0x61 {- a -} <= word && word <= 0x7A {- z -} = 1
+  | 0x41 {- A -} <= word && word <= 0x5A {- Z -} = 1
+  | 0x30 {- 0 -} <= word && word <= 0x39 {- 9 -} = 1
+  | word == 0x5F {- _ -} = 1
+  | word < 0xc0 = 0
+  | word < 0xe0 = if Char.isAlpha (chr2 pos word) then 2 else 0
+  | word < 0xf0 = if Char.isAlpha (chr3 pos word) then 3 else 0
+  | word < 0xf8 = if Char.isAlpha (chr4 pos word) then 4 else 0
+  | True = 0
+```
+
+**And that function is also its keyword boundary.** `Parse/Keyword.hs` defines
+`type_` as `k4 0x74 0x79 0x70 0x65`, and `k4` ends with:
+
+```haskell
+          && P.unsafeIndex (plusPtr pos 3) == w4
+          && Var.getInnerWidth pos4 end == 0
+          then let !s = P.State src pos4 end indent row (col + 4) in cok () s
+          else eerr row col toError
+```
+
+`Var.getInnerWidth` is the identifier rule itself. The Haskell frontend derives
+"where does this keyword end" *from* "what continues a name", so the two cannot
+come apart.
+
+`gren-lang/compiler-common` parses the same language and cannot do that. It has
+its own, matching, notion of a name character —
+`Compiler/Parse/Variable.gren`:
+
+```gren
+isInner : Char -> Bool
+isInner char =
+    Char.isAlphaNum char
+        || char == '_'
+        || isLowerCaseLetter char      -- a \p{Ll} regex
+        || isUpperCaseLetter char      -- a \p{Lu} regex
+```
+
+— but its keywords go through `String.Parser.Advanced`, whose boundary is the
+hardcoded predicate above. On `main` (3.0.0) that is **11 call sites**:
+
+```
+src/Compiler/Parse/Declaration.gren:180  Parser.keyword "type"
+src/Compiler/Parse/Declaration.gren:195  Parser.keyword "alias"
+src/Compiler/Parse/Declaration.gren:289  Parser.keyword "port"
+src/Compiler/Parse/Expression.gren:306   Parser.keyword "let"
+src/Compiler/Parse/Expression.gren:423   Parser.keyword "in"
+src/Compiler/Parse/Expression.gren:447   Parser.keyword "if"
+src/Compiler/Parse/Expression.gren:451   Parser.keyword "then"
+src/Compiler/Parse/Expression.gren:455   Parser.keyword "else"
+src/Compiler/Parse/Expression.gren:488   Parser.keyword "when"
+src/Compiler/Parse/Expression.gren:492   Parser.keyword "is"
+src/Compiler/Parse/Expression.gren:520   Parser.keyword "->"
+```
+
+So one package holds both halves of a contradiction: `isInner` says `é`
+continues a name, and `keyword` says it ends one. The result is that
+`compiler-common` rejects `typeé`, `typeｚ` and `type𝐚` — three declarations the
+Haskell frontend compiles.
+
+It cannot be fixed inside `compiler-common` by passing the right predicate,
+because there is nowhere to pass it. That is what makes this a `core` issue
+rather than a caller's: `variable` takes its `inner` predicate as a parameter
+and `keyword`'s boundary is a literal, so a parser using both is telling the
+library two different things about what a name is and has no way to stop.
 
 ## Suggested fix
 

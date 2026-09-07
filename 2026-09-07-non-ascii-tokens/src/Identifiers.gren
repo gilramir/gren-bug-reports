@@ -1,0 +1,51 @@
+module Identifiers exposing (main)
+
+-- Evidence that the names in the other two programs are legal Gren. Every
+-- identifier below is non-ASCII; that this module compiles is the whole point
+-- of it.
+
+import Node
+import Stream
+import Task exposing (Task)
+
+
+café : Int
+café =
+    1
+
+
+ｚebra : Int
+ｚebra =
+    2
+
+
+𝐚stral : Int
+𝐚stral =
+    4
+
+
+type Týpe
+    = Éins
+    | Zwölf
+
+
+value : Týpe -> Int
+value t =
+    when t is
+        Éins ->
+            café
+
+        Zwölf ->
+            ｚebra + 𝐚stral
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    Stream.writeLineAsBytes (String.fromInt (value Éins + value Zwölf)) env.stdout
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

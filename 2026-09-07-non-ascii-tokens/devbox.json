@@ -6,6 +6,9 @@
   },
   "shell": {
     "scripts": {
+      "identifiers": [
+        "gren run Identifiers"
+      ],
       "boundary": [
         "gren run Boundary"
       ],

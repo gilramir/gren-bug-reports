@@ -1,0 +1,200 @@
+module Main exposing (main)
+
+{-| `String.Parser`'s `keyword` decides where a word ends by asking
+`Char.isAlphaNum`, which is ASCII by contract. So a keyword matches the front of
+any name that continues into a letter outside ASCII, and the parse that follows
+is wrong rather than refused.
+
+Two parts. The first asks `keyword` directly. The second is a small language
+where the mistake behaves the way it does in a real parser: the error is
+reported several characters away from the name that caused it, and one input
+parses successfully as the wrong thing.
+-}
+
+import Init
+import Node
+import Stream
+import String.Parser as P
+import Task exposing (Task)
+
+
+
+-- PART 1 · what `keyword` says
+
+
+{-| The whole of it: match `let`, and nothing else. -}
+justTheKeyword : P.Parser {}
+justTheKeyword =
+    P.succeed {}
+        |> P.skip (P.keyword "let")
+
+
+keywordSays : String -> String
+keywordSays src =
+    when P.run justTheKeyword src is
+        Ok _ ->
+            "matched"
+
+        Err _ ->
+            "refused"
+
+
+
+-- PART 2 · what that does to a parser built on it
+
+
+{-| A two-expression language:
+
+        let <name> = <int>          a binding
+        <name>                      a reference
+
+`name` allows letters beyond ASCII, the way most languages' identifiers do.
+-}
+type Expr
+    = Binding { name : String, value : Int }
+    | Reference String
+
+
+expr : P.Parser Expr
+expr =
+    P.oneOf
+        [ binding
+        , P.map Reference name
+        ]
+
+
+binding : P.Parser Expr
+binding =
+    P.succeed (\n v -> Binding { name = n, value = v })
+        |> P.skip (P.keyword "let")
+        |> P.skip P.spaces
+        |> P.keep name
+        |> P.skip P.spaces
+        |> P.skip (P.token "=")
+        |> P.skip P.spaces
+        |> P.keep P.int
+
+
+name : P.Parser String
+name =
+    P.variable { start = isLetter, inner = isLetter }
+
+
+{-| A letter, in the sense any language with non-ASCII identifiers means it.
+The surrogate range is excluded because half a surrogate pair is not a
+character; see the note about `isSubChar` in the README.
+-}
+isLetter : Char -> Bool
+isLetter c =
+    let
+        code =
+            Char.toCode c
+    in
+    Char.isAlphaNum c || (code > 0x7F && (code < 0xD800 || code > 0xDFFF))
+
+
+parseSays : String -> String
+parseSays src =
+    when P.run (P.succeed identity |> P.keep expr |> P.skip P.end) src is
+        Ok (Reference n) ->
+            "Reference " ++ quote n
+
+        Ok (Binding b) ->
+            "Binding " ++ quote b.name ++ " " ++ String.fromInt b.value
+
+        Err deadEnds ->
+            "error at column "
+                ++ (Array.first deadEnds
+                        |> Maybe.map (\d -> String.fromInt d.col)
+                        |> Maybe.withDefault "?"
+                   )
+
+
+quote : String -> String
+quote s =
+    "\"" ++ s ++ "\""
+
+
+
+-- THE INPUTS
+
+
+{-| One ASCII control and three names that continue past it. The three are the
+three widths a UTF-8 decoder has to get past: two bytes, three, and four.
+-}
+type alias Row =
+    { label : String
+    , word : String
+    }
+
+
+rows : Array Row
+rows =
+    [ { label = "letters   (ASCII)           ", word = "letters" }
+    , { label = "let\\u{00E9}s  (U+00E9,  2 bytes) ", word = "let" ++ ch 0x00E9 ++ "s" }
+    , { label = "let\\u{FF5A}s  (U+FF5A,  3 bytes) ", word = "let" ++ ch 0xFF5A ++ "s" }
+    , { label = "let\\u{1D41A}s (U+1D41A, 4 bytes) ", word = "let" ++ ch 0x1D41A ++ "s" }
+    ]
+
+
+ch : Int -> String
+ch code =
+    String.fromChar (Char.fromCode code)
+
+
+
+-- OUTPUT
+
+
+report : String
+report =
+    String.join "\n"
+        [ "PART 1 -- `keyword \"let\"` on its own"
+        , ""
+        , "  `keyword` promises a word boundary: its docs say `keyword \"let\"`"
+        , "  will not chomp `letters`. Every row below is one name, so every"
+        , "  row should say `refused`."
+        , ""
+        , rows
+            |> Array.map (\r -> "    " ++ r.label ++ " -> " ++ keywordSays r.word)
+            |> String.join "\n"
+        , ""
+        , ""
+        , "PART 2 -- the same names as whole programs"
+        , ""
+        , "  Each is a bare reference to a variable, so each should parse as"
+        , "  `Reference <the name>`."
+        , ""
+        , rows
+            |> Array.map (\r -> "    " ++ r.label ++ " -> " ++ parseSays r.word)
+            |> String.join "\n"
+        , ""
+        , ""
+        , "  And a real binding, which has to keep working:"
+        , ""
+        , "    let x = 1                     -> " ++ parseSays "let x = 1"
+        , ""
+        , ""
+        , "PART 3 -- the silent one"
+        , ""
+        , "  `let" ++ ch 0x00E9 ++ " = 1` is a binding whose variable is named"
+        , "  `" ++ ch 0x00E9 ++ "`. `let" ++ ch 0x00E9 ++ "` is a reference to a variable"
+        , "  named `let" ++ ch 0x00E9 ++ "`. They are different programs and only"
+        , "  the first is written with a space:"
+        , ""
+        , "    let\\u{00E9} = 1                    -> " ++ parseSays ("let" ++ ch 0x00E9 ++ " = 1")
+        , "    let \\u{00E9} = 1                   -> " ++ parseSays ("let " ++ ch 0x00E9 ++ " = 1")
+        ]
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram
+        (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    Stream.writeLineAsBytes report env.stdout
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

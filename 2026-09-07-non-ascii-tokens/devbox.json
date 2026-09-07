@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.18.0/.schema/devbox.schema.json",
+  "packages": {
+    "gren": "0.6",
+    "nodejs": "22"
+  },
+  "shell": {
+    "scripts": {
+      "run": [
+        "gren run Main"
+      ]
+    }
+  }
+}

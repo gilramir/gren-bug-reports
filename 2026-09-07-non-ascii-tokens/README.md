@@ -1,4 +1,4 @@
-# `keyword` ends a word at ASCII, so `let` matches the front of `letés`
+# `String.Parser.keyword` treats every non-ASCII letter as a word boundary
 
 ## What `keyword` is for
 

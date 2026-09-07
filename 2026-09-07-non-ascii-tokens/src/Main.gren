@@ -33,7 +33,7 @@ keywordSays : String -> String
 keywordSays src =
     when P.run justTheKeyword src is
         Ok _ ->
-            "matched"
+            "MATCHED"
 
         Err _ ->
             "refused"
@@ -123,17 +123,42 @@ quote s =
 three widths a UTF-8 decoder has to get past: two bytes, three, and four.
 -}
 type alias Row =
-    { label : String
+    { input : String
+    , after : String
+    , expected : String
     , word : String
     }
 
 
+{-| One ASCII control and three names that continue past it, at the three
+widths a UTF-8 decoder has to get past: two bytes, three, and four.
+
+`input` and `expected` are written out in ASCII escapes so that the table lines
+up in any terminal and says which codepoint it means without depending on a
+font.
+-}
 rows : Array Row
 rows =
-    [ { label = "letters   (ASCII)           ", word = "letters" }
-    , { label = "let\\u{00E9}s  (U+00E9,  2 bytes) ", word = "let" ++ ch 0x00E9 ++ "s" }
-    , { label = "let\\u{FF5A}s  (U+FF5A,  3 bytes) ", word = "let" ++ ch 0xFF5A ++ "s" }
-    , { label = "let\\u{1D41A}s (U+1D41A, 4 bytes) ", word = "let" ++ ch 0x1D41A ++ "s" }
+    [ { input = "letters"
+      , after = "U+0073 's', ASCII, 1 byte"
+      , expected = "Reference \"letters\""
+      , word = "letters"
+      }
+    , { input = "let\\u{00E9}s"
+      , after = "U+00E9, 2 UTF-8 bytes"
+      , expected = "Reference \"let\\u{00E9}s\""
+      , word = "let" ++ ch 0x00E9 ++ "s"
+      }
+    , { input = "let\\u{FF5A}s"
+      , after = "U+FF5A, 3 UTF-8 bytes"
+      , expected = "Reference \"let\\u{FF5A}s\""
+      , word = "let" ++ ch 0xFF5A ++ "s"
+      }
+    , { input = "let\\u{1D41A}s"
+      , after = "U+1D41A, 4 UTF-8 bytes"
+      , expected = "Reference \"let\\u{1D41A}s\""
+      , word = "let" ++ ch 0x1D41A ++ "s"
+      }
     ]
 
 
@@ -142,6 +167,13 @@ ch code =
     String.fromChar (Char.fromCode code)
 
 
+{-| Pad on the right, so the columns line up. Every string this is applied to
+is ASCII, which is what makes a count of characters a count of columns.
+-}
+pad : Int -> String -> String
+pad width text =
+    text ++ String.repeat (max 0 (width - String.count text)) " "
+
 
 -- OUTPUT
 
@@ -149,42 +181,122 @@ ch code =
 report : String
 report =
     String.join "\n"
-        [ "PART 1 -- `keyword \"let\"` on its own"
+        [ "PART 1 -- what `keyword` is for, and what it does"
         , ""
-        , "  `keyword` promises a word boundary: its docs say `keyword \"let\"`"
-        , "  will not chomp `letters`. Every row below is one name, so every"
-        , "  row should say `refused`."
+        , "  A keyword parser has to refuse to match when the keyword is only the"
+        , "  front of a longer name. In `letters` the `let` is not a keyword, it is"
+        , "  the first three letters of a variable. `token \"let\"` matches all four"
+        , "  inputs below; `keyword \"let\"` exists to tell them apart, and its docs"
+        , "  say it \"would fail to chomp `letter` because of the subsequent"
+        , "  characters\"."
         , ""
+        , "  It decides by looking at the one character that comes AFTER the"
+        , "  keyword and asking whether that character could be part of a name. If"
+        , "  it could, this is not a keyword and the parser fails. That test is the"
+        , "  word boundary. `String.Parser` makes it with `Char.isAlphaNum`, which"
+        , "  is documented as answering for ASCII and nothing else -- its own"
+        , "  docs give `isAlphaNum '" ++ ch 0x03C0 ++ "' == False` as an example."
+        , ""
+        , "  So the boundary is not \"a space\" or \"punctuation\": it is \"the next"
+        , "  character is not a letter, digit or underscore\", decided over ASCII"
+        , "  alone. Every input below is a SINGLE name -- a variable called"
+        , "  `letters`, a variable called `let\\u{00E9}s`, and so on. No keyword"
+        , "  occurs in any of them, so the right answer for all four is `refused`."
+        , ""
+        , "    refused  `run (keyword \"let\") input` returned Err. The parser did"
+        , "             not accept `let` as a keyword here. This is correct."
+        , "    MATCHED  it returned Ok. The parser took `let` to be a whole"
+        , "             keyword and consumed it, leaving the rest of the name"
+        , "             behind for whatever the grammar expects next."
+        , ""
+        , "  " ++ pad 17 "input" ++ pad 29 "character after `let`" ++ "keyword \"let\" says"
+        , "  " ++ pad 17 (dashes 15) ++ pad 29 (dashes 27) ++ dashes 18
         , rows
-            |> Array.map (\r -> "    " ++ r.label ++ " -> " ++ keywordSays r.word)
+            |> Array.map
+                (\r ->
+                    let
+                        said =
+                            keywordSays r.word
+                    in
+                    "  "
+                        ++ pad 17 r.input
+                        ++ pad 29 r.after
+                        ++ said
+                        ++ (if said == "MATCHED" then "  <- wrong" else "")
+                )
             |> String.join "\n"
         , ""
         , ""
-        , "PART 2 -- the same names as whole programs"
+        , "PART 2 -- what that does to a parser built on it"
         , ""
-        , "  Each is a bare reference to a variable, so each should parse as"
-        , "  `Reference <the name>`."
+        , "  A language with two forms:"
         , ""
+        , "      let <name> = <int>     a binding"
+        , "      <name>                 a reference to a variable"
+        , ""
+        , "  `<name>` allows letters beyond ASCII, the way most languages'"
+        , "  identifiers do. Each input below is the whole program, and each is a"
+        , "  bare reference -- one variable's name and nothing else."
+        , ""
+        , "  What happens instead: `keyword \"let\"` matches, the binding branch"
+        , "  commits, and the parser then looks for the `=` of a binding nobody"
+        , "  wrote. The failure is reported where that `=` was expected, which is"
+        , "  past the end of a name four characters long."
+        , ""
+        , "  " ++ pad 17 "input" ++ pad 29 "should parse as" ++ "actually"
+        , "  " ++ pad 17 (dashes 15) ++ pad 29 (dashes 27) ++ dashes 26
         , rows
-            |> Array.map (\r -> "    " ++ r.label ++ " -> " ++ parseSays r.word)
+            |> Array.map
+                (\r ->
+                    let
+                        got =
+                            parseSays r.word
+                    in
+                    "  "
+                        ++ pad 17 r.input
+                        ++ pad 29 r.expected
+                        ++ got
+                        ++ (if got == r.expected then "" else "  <- wrong")
+                )
             |> String.join "\n"
         , ""
+        , "  The last row's column differs, and that is a second bug, already"
+        , "  filed as gren-lang/core#138: `variable`'s own `start` predicate is"
+        , "  handed the lead surrogate of the pair rather than U+1D41A, so it"
+        , "  refuses the name at column 4, instead of reading it and then looking"
+        , "  for an `=` at column 6. With #138 fixed the row reads `error at"
+        , "  column 6` like the other two. It fails either way, and for this"
+        , "  bug's reason -- see the README."
         , ""
-        , "  And a real binding, which has to keep working:"
+        , "  A real binding still works, which is the other half of the check --"
+        , "  a fix must not turn `keyword` into `token`:"
         , ""
-        , "    let x = 1                     -> " ++ parseSays "let x = 1"
+        , "    let x = 1                       " ++ parseSays "let x = 1"
         , ""
         , ""
-        , "PART 3 -- the silent one"
+        , "PART 3 -- the same bug with no error at all"
         , ""
-        , "  `let" ++ ch 0x00E9 ++ " = 1` is a binding whose variable is named"
-        , "  `" ++ ch 0x00E9 ++ "`. `let" ++ ch 0x00E9 ++ "` is a reference to a variable"
-        , "  named `let" ++ ch 0x00E9 ++ "`. They are different programs and only"
-        , "  the first is written with a space:"
+        , "  Written with a space, this binds a variable whose name is the single"
+        , "  character U+00E9. The result below is the right one; it prints the"
+        , "  character itself rather than an escape:"
         , ""
-        , "    let\\u{00E9} = 1                    -> " ++ parseSays ("let" ++ ch 0x00E9 ++ " = 1")
-        , "    let \\u{00E9} = 1                   -> " ++ parseSays ("let " ++ ch 0x00E9 ++ " = 1")
+        , "    " ++ pad 32 "let \\u{00E9} = 1" ++ parseSays ("let " ++ ch 0x00E9 ++ " = 1")
+        , ""
+        , "  Written without one, `let\\u{00E9}` is a single name, so the program is"
+        , "  a reference followed by ` = 1` -- which this language has no rule for."
+        , "  The right answer is an error:"
+        , ""
+        , "    " ++ pad 32 "let\\u{00E9} = 1" ++ parseSays ("let" ++ ch 0x00E9 ++ " = 1")
+        , ""
+        , "  Both give the same value. Two different pieces of source, one of them"
+        , "  not a valid program at all, parse to one result and no diagnostic."
+        , "  Part 2's failures are at least visible; this one is not."
         ]
+
+
+dashes : Int -> String
+dashes n =
+    String.repeat n "-"
 
 
 main : Node.SimpleProgram a

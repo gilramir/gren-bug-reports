@@ -1,0 +1,49 @@
+module Main exposing (main)
+
+
+import Node
+import Stream
+import Task exposing (Task)
+
+
+orderToString : Order -> String
+orderToString order =
+    when order is
+        LT ->
+            "LT"
+
+        EQ ->
+            "EQ"
+
+        GT ->
+            "GT"
+
+
+{-| Both strings hold a single code point, so this compares two code points.
+-}
+describe : { name : String, left : String, right : String } -> String
+describe { name, left, right } =
+    name ++ " -> " ++ orderToString (compare left right)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    [ { name = "compare \"\\u{FFFE}\" \"\\u{1F600}\""
+      , left = "\u{FFFE}"
+      , right = "\u{1F600}"
+      }
+    , { name = "compare \"\\u{1F600}\" \"\\u{FFFE}\""
+      , left = "\u{1F600}"
+      , right = "\u{FFFE}"
+      }
+    ]
+        |> Array.map describe
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

@@ -1,0 +1,79 @@
+module Language exposing (main)
+
+-- A two-form language built on `keyword`:
+--
+--     let <name> = <int>     a binding
+--     <name>                 a reference
+--
+-- `name` allows letters beyond ASCII. README.md says what each line of the
+-- output should say.
+
+import Node
+import Stream
+import String.Parser as P
+import Task exposing (Task)
+
+
+expr : P.Parser String
+expr =
+    P.oneOf
+        [ P.succeed (\n v -> "Binding " ++ n ++ " = " ++ String.fromInt v)
+            |> P.skip (P.keyword "let")
+            |> P.skip P.spaces
+            |> P.keep name
+            |> P.skip P.spaces
+            |> P.skip (P.token "=")
+            |> P.skip P.spaces
+            |> P.keep P.int
+        , P.map (\n -> "Reference " ++ n) name
+        ]
+
+
+name : P.Parser String
+name =
+    P.variable { start = isLetter, inner = isLetter }
+
+
+-- A letter, in the sense a language with non-ASCII identifiers means it. The
+-- surrogate range is excluded because half a surrogate pair is not a character.
+isLetter : Char -> Bool
+isLetter c =
+    let
+        code =
+            Char.toCode c
+    in
+    Char.isAlphaNum c || (code > 0x7F && (code < 0xD800 || code > 0xDFFF))
+
+
+parse : String -> String
+parse source =
+    when P.run (P.succeed identity |> P.keep expr |> P.skip P.end) source is
+        Ok result ->
+            result
+
+        Err deadEnds ->
+            Array.first deadEnds
+                |> Maybe.map (\d -> "error at column " ++ String.fromInt d.col)
+                |> Maybe.withDefault "error"
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    [ "letters"
+    , "let\u{00E9}s"
+    , "let\u{FF5A}s"
+    , "let\u{1D41A}s"
+    , "let x = 1"
+    , "let \u{00E9} = 1"
+    , "let\u{00E9} = 1"
+    ]
+        |> Array.map (\source -> source ++ "   =>   " ++ parse source)
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

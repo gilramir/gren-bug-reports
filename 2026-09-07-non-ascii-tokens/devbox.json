@@ -6,8 +6,11 @@
   },
   "shell": {
     "scripts": {
-      "run": [
-        "gren run Main"
+      "boundary": [
+        "gren run Boundary"
+      ],
+      "language": [
+        "gren run Language"
       ]
     }
   }

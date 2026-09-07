@@ -1,0 +1,34 @@
+module Boundary exposing (main)
+
+-- `keyword "let"` against four names that begin with the letters `l`, `e`, `t`.
+-- None of them contains the keyword `let`, so all four should be `Err`.
+
+import Node
+import Stream
+import String.Parser as P
+import Task exposing (Task)
+
+
+keywordLet : String -> String
+keywordLet source =
+    when P.run (P.succeed {} |> P.skip (P.keyword "let")) source is
+        Ok _ ->
+            "Ok "
+
+        Err _ ->
+            "Err"
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    [ "letters", "let\u{00E9}s", "let\u{FF5A}s", "let\u{1D41A}s" ]
+        |> Array.map (\source -> keywordLet source ++ "   " ++ source)
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

@@ -1,7 +1,12 @@
 #!/bin/sh
-# Builds and runs the reproduction. Everything it prints goes to stdout; there
-# is no server and no browser involved.
+# Two programs. `src/Boundary.gren` asks `keyword` directly; `src/Language.gren`
+# is a small language built on it. README.md says what each line should say.
 set -e
 cd "$(dirname "$0")"
 
-exec devbox run run
+echo "=== src/Boundary.gren — Err is correct for all four"
+devbox run boundary
+
+echo
+echo "=== src/Language.gren"
+devbox run language

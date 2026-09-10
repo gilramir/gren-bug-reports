@@ -1,0 +1,67 @@
+module Main exposing (main)
+
+import Bitwise
+import Node
+import Random
+import Stream
+import Task exposing (Task)
+
+
+{-| `Random.peel` is PCG's RXS-M-SH and multiplies a 32-bit word by `277803737`
+modulo 2^32. In Gren that `*` is a float64 multiply, so the product reaches 2^60
+and the low bits are gone before `shiftRightZfBy 22` reads them.
+
+`reference.js` beside this file is the same generator transcribed into BigInt,
+with every step taken mod 2^32 and nothing else changed.
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    Stream.writeLineAsBytes report env.stdout
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})
+
+
+report : String
+report =
+    String.join "\n"
+        [ "the multiply, low 32 bits of 2000000001 * 277803737"
+        , "  Gren             " ++ String.fromInt (lowBits state)
+        , "  exact            3672205017"
+        , ""
+        , "eight Random.int 1 6 draws from Random.initialSeed 7"
+        , "  Gren             " ++ draws
+        ]
+
+
+{-| Computed rather than literal, so this is not constant folding. Below 2^31,
+so `Bitwise.xor`'s signed 32-bit result is the number it reads as.
+-}
+state : Int
+state =
+    Bitwise.xor 2000000000 1
+
+
+lowBits : Int -> Int
+lowBits n =
+    Bitwise.shiftRightZfBy 0 (n * 277803737)
+
+
+draws : String
+draws =
+    Array.foldl
+        (\_ acc ->
+            let
+                drawn =
+                    Random.step (Random.int 1 6) acc.seed
+            in
+            { out = acc.out ++ [ String.fromInt drawn.value ], seed = drawn.seed }
+        )
+        { out = [], seed = Random.initialSeed 7 }
+        [ 1, 2, 3, 4, 5, 6, 7, 8 ]
+        |> .out
+        |> String.join " "

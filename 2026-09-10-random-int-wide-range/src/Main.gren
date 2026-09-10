@@ -1,0 +1,64 @@
+module Main exposing (main)
+
+
+import Node
+import Random
+import Stream
+import Task exposing (Task)
+
+
+{-| `Random.int`'s power-of-two test is
+
+    if (Bitwise.and (range - 1) range) == 0 then
+
+and `Bitwise.and` is JavaScript `&`, which coerces both operands to int32. An
+`Int` is a float64 and holds more than that, so once `range` reaches 2^32 both
+the test and the mask it selects are answers about a truncation.
+
+`range` for the second row is 2^32 + 1, so `range - 1` is 2^32, which masks to
+`0` — and every draw is the lower bound.
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    report
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})
+
+
+report : String
+report =
+    String.join "\n"
+        [ "six Random.int draws from Random.initialSeed 7, per range"
+        , ""
+        , "  int 0 0xFFFFFFFF   range 2^32     " ++ draws 0 0xFFFFFFFF
+        , "  int 0 0x100000000  range 2^32+1   " ++ draws 0 0x100000000
+        , "  int 0 0x17FFFFFFF  range 1.5*2^32 " ++ draws 0 0x17FFFFFFF
+        , ""
+        , "The second row is the defect: `range - 1` is 2^32, which masks to 0."
+        , "The third reaches the low third of its interval and no further."
+        , "The first works, and is the call `independentSeed` itself makes:"
+        , "`-1 & 0` is 0 and a mask of -1 is the identity, so two truncations"
+        , "cancel at exactly that one width."
+        ]
+
+
+draws : Int -> Int -> String
+draws lo hi =
+    Array.foldl
+        (\_ acc ->
+            let
+                drawn =
+                    Random.step (Random.int lo hi) acc.seed
+            in
+            { out = acc.out ++ [ String.fromInt drawn.value ], seed = drawn.seed }
+        )
+        { out = [], seed = Random.initialSeed 7 }
+        [ 1, 2, 3, 4, 5, 6 ]
+        |> .out
+        |> String.join " "

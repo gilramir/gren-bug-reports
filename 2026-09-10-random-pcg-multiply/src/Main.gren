@@ -35,7 +35,30 @@ report =
         , ""
         , "eight Random.int 1 6 draws from Random.initialSeed 7"
         , "  Gren             " ++ draws
+        , ""
+        , "ranges at or past 2^32, where the power-of-two test truncates"
+        , "  int 0 0xFFFFFFFF    " ++ wide 0 0xFFFFFFFF
+        , "  int 0 0x100000000   " ++ wide 0 0x100000000
+        , "  int 0 0x17FFFFFFF   " ++ wide 0 0x17FFFFFFF
         ]
+
+
+{-| Eight draws from one seed, to show the spread rather than one value.
+-}
+wide : Int -> Int -> String
+wide lo hi =
+    Array.foldl
+        (\_ acc ->
+            let
+                drawn =
+                    Random.step (Random.int lo hi) acc.seed
+            in
+            { out = acc.out ++ [ String.fromInt drawn.value ], seed = drawn.seed }
+        )
+        { out = [], seed = Random.initialSeed 7 }
+        [ 1, 2, 3, 4, 5, 6 ]
+        |> .out
+        |> String.join " "
 
 
 {-| Computed rather than literal, so this is not constant folding. Below 2^31,

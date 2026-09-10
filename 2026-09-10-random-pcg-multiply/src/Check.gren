@@ -1,0 +1,328 @@
+module Check exposing (main)
+
+{-| An acceptance check for the fix: run it against `gren-lang/core` as it
+stands and it fails, run it after `peel`'s multiply is made to wrap and it
+passes.
+
+Part A needs no expected values from anywhere -- it measures a property every
+correct RXS-M-SH has and this one does not. Part B pins the stream, and is the
+part worth keeping in a test suite afterwards.
+-}
+
+import Array exposing (Array)
+import Bitwise
+import Math exposing (abs, round)
+import Node
+import Random
+import Stream
+import Task exposing (Task)
+
+
+sampleCount : Int
+sampleCount =
+    100000
+
+
+seedNumber : Int
+seedNumber =
+    7
+
+
+{-| How far from 50% part A tolerates, in hundredths of a percentage point. At
+100000 draws one standard error is about 0.16 points, so 1.50 is ten of them --
+wide enough never to fail by chance, narrow enough that every bit below fails
+today by tens of points.
+-}
+tolerance : Int
+tolerance =
+    150
+
+
+{-| A range of 2^32 masks with all ones, so each draw is `peel`'s 32-bit word
+unchanged. See the report for why.
+-}
+word32 : Random.Generator Int
+word32 =
+    Random.int 0 4294967295
+
+
+{-| `Random.int 0 4294967295` and `Random.int 1 6` from `Random.initialSeed 7`,
+under RXS-M-SH with a wrapping multiply. Produced twice over, once in
+JavaScript `BigInt` and once with `Math.imul`, agreeing exactly.
+-}
+expectedWords : Array Int
+expectedWords =
+    [ 2412620529
+    , 962486954
+    , 4105077478
+    , 2526171408
+    , 1015690978
+    , 2793902068
+    , 1348260395
+    , 4042524986
+    ]
+
+
+expectedDice : Array Int
+expectedDice =
+    [ 4, 3, 5, 1, 5, 5, 6, 3 ]
+
+
+
+-- PART A: A PROPERTY, MEASURED
+
+
+bitAt : Int -> Int -> Int
+bitAt k v =
+    Bitwise.and 1 (Bitwise.shiftRightZfBy k v)
+
+
+{-| `word` bit k is output bit k xor output bit k+22, so those two output bits
+agree exactly when the multiply dropped bit k. RXS-M-SH keeps it and they agree
+half the time; float64 rounding zeroes it and they always agree.
+-}
+agreementCounts : Array Int
+agreementCounts =
+    Array.foldl
+        (\_ acc ->
+            let
+                drawn =
+                    Random.step word32 acc.seed
+            in
+            { seed = drawn.seed
+            , counts =
+                Array.indexedMap
+                    (\k c ->
+                        if bitAt k drawn.value == bitAt (k + 22) drawn.value then
+                            c + 1
+
+                        else
+                            c
+                    )
+                    acc.counts
+            }
+        )
+        { seed = Random.initialSeed seedNumber, counts = Array.repeat 7 0 }
+        (Array.range 1 sampleCount)
+        |> .counts
+
+
+
+-- PART B: THE STREAM
+
+
+firstDraws : Random.Generator Int -> Int -> Array Int
+firstDraws generator count =
+    Array.foldl
+        (\_ acc ->
+            let
+                drawn =
+                    Random.step generator acc.seed
+            in
+            { seed = drawn.seed, out = Array.pushLast drawn.value acc.out }
+        )
+        { seed = Random.initialSeed seedNumber, out = [] }
+        (Array.range 1 count)
+        |> .out
+
+
+
+-- RENDERING
+
+
+hundredths : Int -> Int
+hundredths count =
+    round (10000 * toFloat count / toFloat sampleCount)
+
+
+showHundredths : Int -> String
+showHundredths h =
+    String.fromInt (h // 100)
+        ++ "."
+        ++ String.padLeft 2 '0' (String.fromInt (Math.modBy 100 h))
+
+
+verdict : Bool -> String
+verdict ok =
+    if ok then
+        "pass"
+
+    else
+        "FAIL"
+
+
+agreementLine : Int -> { line : String, ok : Bool }
+agreementLine k =
+    let
+        measured =
+            hundredths (Array.get k agreementCounts |> Maybe.withDefault 0)
+
+        ok =
+            abs (measured - 5000) <= tolerance
+
+        stated =
+            "     bit "
+                ++ String.padLeft 2 ' ' (String.fromInt k)
+                ++ " vs bit "
+                ++ String.fromInt (k + 22)
+                ++ "   "
+                ++ String.padLeft 6 ' ' (showHundredths measured)
+                ++ "%"
+    in
+    if k == 6 then
+        { line = stated ++ "   reported, not asserted: the shallowest"
+        , ok = True
+        }
+
+    else
+        { line =
+            stated
+                ++ "   want 50.00% +/- "
+                ++ showHundredths tolerance
+                ++ "   "
+                ++ verdict ok
+        , ok = ok
+        }
+
+
+partA : { lines : Array String, failures : Int }
+partA =
+    Array.range 0 6
+        |> Array.map agreementLine
+        |> Array.foldl
+            (\entry acc ->
+                { lines = Array.pushLast entry.line acc.lines
+                , failures =
+                    if entry.ok then
+                        acc.failures
+
+                    else
+                        acc.failures + 1
+                }
+            )
+            { lines = [], failures = 0 }
+
+
+streamCheck : String -> Random.Generator Int -> Array Int -> Int -> { lines : Array String, ok : Bool }
+streamCheck title generator expected width =
+    let
+        got =
+            firstDraws generator (Array.length expected)
+
+        rows =
+            Array.indexedMap
+                (\i want ->
+                    let
+                        actual =
+                            Array.get i got |> Maybe.withDefault 0
+                    in
+                    "     "
+                        ++ String.padLeft 4 ' ' (String.fromInt (i + 1))
+                        ++ "   "
+                        ++ String.padLeft width ' ' (String.fromInt actual)
+                        ++ "   "
+                        ++ String.padLeft width ' ' (String.fromInt want)
+                        ++ (if actual == want then
+                                ""
+
+                            else
+                                "   <"
+                           )
+                )
+                expected
+    in
+    { lines =
+        Array.flatten
+            [ [ "   " ++ title
+              , "     draw   " ++ String.padLeft width ' ' "got" ++ "   " ++ String.padLeft width ' ' "want"
+              ]
+            , rows
+            ]
+    , ok = got == expected
+    }
+
+
+diceCheck : { lines : Array String, ok : Bool }
+diceCheck =
+    streamCheck "Random.int 1 6, from Random.initialSeed 7" (Random.int 1 6) expectedDice 4
+
+
+wordCheck : { lines : Array String, ok : Bool }
+wordCheck =
+    streamCheck "Random.int 0 4294967295, from Random.initialSeed 7" word32 expectedWords 10
+
+
+
+-- REPORT
+
+
+report : String
+report =
+    let
+        failures =
+            partA.failures
+                + (if diceCheck.ok then
+                    0
+
+                   else
+                    1
+                  )
+                + (if wordCheck.ok then
+                    0
+
+                   else
+                    1
+                  )
+
+        total =
+            8
+    in
+    String.join "\n"
+        (Array.flatten
+            [ [ "Random.peel acceptance check -- fails on core as it stands, passes once"
+              , "peel's multiply wraps modulo 2^32."
+              , ""
+              , "A. two output bits RXS-M-SH makes independent"
+              , ""
+              , "   " ++ String.fromInt sampleCount ++ " draws of Random.int 0 4294967295 from Random.initialSeed 7."
+              , "   That range masks with all ones, so each draw is peel's 32-bit word"
+              , "   unchanged. The word's bit k is output bit k xor output bit k+22, so"
+              , "   those two output bits agree half the time when the multiply keeps"
+              , "   bit k, and always when rounding has zeroed it."
+              , ""
+              ]
+            , partA.lines
+            , [ ""
+              , "B. known answer, for the test suite afterwards"
+              , ""
+              ]
+            , diceCheck.lines
+            , [ "" ]
+            , wordCheck.lines
+            , [ ""
+              , "RESULT  "
+                    ++ (if failures == 0 then
+                            "pass, all " ++ String.fromInt total ++ " checks"
+
+                        else
+                            "FAIL, "
+                                ++ String.fromInt failures
+                                ++ " of "
+                                ++ String.fromInt total
+                                ++ " checks"
+                       )
+              ]
+            ]
+        )
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    Stream.writeLineAsBytes report env.stdout
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

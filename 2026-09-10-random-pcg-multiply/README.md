@@ -2,9 +2,13 @@
 
 `gren` 0.6.6, `gren-lang/core` 7.4.2, node 22, Linux x86-64.
 
-`./run.sh` shows the defect in one multiply and in eight dice rolls. `./bits.sh`
-counts it, bit by bit, over 100000 draws made through the published API. Every
-figure below names the command that prints it.
+**`./check.sh` is the test to run before the fix and after it.** It exits 0 only
+when all eight of its checks pass, and against core as it stands it fails all
+eight; "Checking the fix" below says what it asserts and shows both outputs.
+
+`./run.sh` shows the defect in one multiply and in eight dice rolls, and
+`./bits.sh` counts it bit by bit over 100000 draws made through the published
+API. Every figure below names the command that prints it.
 
 ## Summary
 
@@ -268,10 +272,88 @@ A narrower alternative is to leave `peel` alone and correct the comment to say
 that the low bits are not PCG's. That is worse: the reference implementation is
 the only specification the function has.
 
+## Checking the fix
+
+`./check.sh` is the before-and-after. It prints a verdict per check and exits 0
+only when every one of them passes; against `gren-lang/core` 7.4.2 it fails all
+eight. It asserts two different kinds of thing on purpose:
+
+**A. A property, carrying no expected values at all.** Over 100000 draws of
+`Random.int 0 4294967295` from `Random.initialSeed 7` it measures how often
+output bit k agrees with output bit k+22, for k from 0 to 6. That pair is
+independent in any correct RXS-M-SH, so the answer has to be near 50 percent,
+and there is nothing here to take on faith — no reference implementation, no
+pinned numbers. This is the check that says whether the fix worked. The
+tolerance is 1.50 percentage points, about ten standard errors at this sample
+size, so it will not fail by chance; today the first six bits miss it by between
+26 and 49 points.
+
+**B. A known answer.** The first eight draws of `Random.int 1 6` and of
+`Random.int 0 4294967295` from `Random.initialSeed 7`, against values from the
+generator with a wrapping multiply. This is the one worth keeping in the test
+suite afterwards, since it pins the whole stream rather than one property of it.
+The expected values were produced twice over, once in JavaScript `BigInt` and
+once with `Math.imul`, agreeing exactly.
+
+Against core as it stands:
+
+```
+     bit  0 vs bit 22    99.26%   want 50.00% +/- 1.50   FAIL
+     bit  1 vs bit 23    98.89%   want 50.00% +/- 1.50   FAIL
+     bit  2 vs bit 24    97.43%   want 50.00% +/- 1.50   FAIL
+     bit  3 vs bit 25    94.29%   want 50.00% +/- 1.50   FAIL
+     bit  4 vs bit 26    88.56%   want 50.00% +/- 1.50   FAIL
+     bit  5 vs bit 27    76.33%   want 50.00% +/- 1.50   FAIL
+     bit  6 vs bit 28    52.19%   reported, not asserted: the shallowest
+
+   Random.int 0 4294967295, from Random.initialSeed 7
+     draw          got         want
+        1   2412620543   2412620529   <
+        2    962486949    962486954   <
+        3   4105077394   4105077478   <
+        4   2526171418   2526171408   <
+
+RESULT  FAIL, 8 of 8 checks
+```
+
+With `peel`'s multiply made to wrap:
+
+```
+     bit  0 vs bit 22    49.93%   want 50.00% +/- 1.50   pass
+     bit  1 vs bit 23    50.19%   want 50.00% +/- 1.50   pass
+     bit  2 vs bit 24    49.91%   want 50.00% +/- 1.50   pass
+     bit  3 vs bit 25    49.95%   want 50.00% +/- 1.50   pass
+     bit  4 vs bit 26    50.27%   want 50.00% +/- 1.50   pass
+     bit  5 vs bit 27    49.86%   want 50.00% +/- 1.50   pass
+     bit  6 vs bit 28    50.26%   reported, not asserted: the shallowest
+
+   Random.int 0 4294967295, from Random.initialSeed 7
+     draw          got         want
+        1   2412620529   2412620529
+        2    962486954    962486954
+        3   4105077478   4105077478
+        4   2526171408   2526171408
+
+RESULT  pass, all 8 checks
+```
+
+Note in part B how close the wrong numbers are to the right ones — they differ
+in their last two or three digits, which is this defect seen from the other end.
+
+That second block is measured, not predicted. It is `gren-lang/core` 7.4.2 built
+as a local package with one line of `peel` changed: the multiply replaced by the
+same operation done in 16-bit halves, which is what `Math.imul` computes. In the
+compiled output there is exactly one line to change, and it is the one quoted
+under "Suggested fix" above:
+
+```js
+var word = (state ^ (state >>> ((state >>> 28) + 4))) * 277803737;
+```
+
 ## Running the examples
 
 This directory is a stock Gren application; `devbox` pins `gren` 0.6.6 and node
-22, so `./run.sh` and `./bits.sh` need nothing else installed.
+22, so the scripts need nothing else installed.
 
 | Figure | Command |
 |---|---|
@@ -282,11 +364,13 @@ This directory is a stock Gren application; `devbox` pins `gren` 0.6.6 and node
 | the bitmap | `./bits.sh` |
 | the 99.26 percent figure | `./bits.sh`, last paragraph of its output |
 | the 100000/100000 self-check | `./bits.sh`, first lines of its output |
+| the before-and-after verdicts | `./check.sh`, which exits 0 only if all eight pass |
 
 | File | What it is |
 |---|---|
 | `src/Main.gren` | the two declarations above, and the eight draws |
 | `src/Bits.gren` | the measurement: draws through the public API, and a transcription of `peel` with `*` and with a wrapping multiply |
+| `src/Check.gren` | the acceptance check: a property that needs no expected values, and a known-answer test |
 | `reference.js` | the generator in `BigInt`, for the expected stream |
 
 ## A second, independent defect in the same module

@@ -1,0 +1,378 @@
+module Bits exposing (main)
+
+{-| Where the lost bits go, measured through `Random`'s public API.
+
+`peel` ends with `p = word ^ (word >>> 22)`, and a 32-bit value shifted right by
+22 twice is zero, so that step is its own inverse: `word = p ^ (p >>> 22)`
+recovers the pre-xor word from a number `Random` hands out. Recovering it and
+counting bits is the whole measurement -- no reference implementation is needed
+to see the hole, only to show what should have been in it.
+-}
+
+import Array exposing (Array)
+import Bitwise
+import Math exposing (round)
+import Node
+import Random
+import Stream
+import Task exposing (Task)
+
+
+sampleCount : Int
+sampleCount =
+    100000
+
+
+bitmapRows : Int
+bitmapRows =
+    22
+
+
+seedNumber : Int
+seedNumber =
+    7
+
+
+
+-- DRAWING 32 BITS THROUGH THE PUBLIC API
+
+
+{-| `Random.int 0 4294967295` has a range of 2^32. `int`'s power-of-two test is
+`Bitwise.and (range - 1) range`, and `Bitwise.and` truncates to int32, so it
+compares `-1` with `0` and takes the fast path; the mask it then applies is
+`range - 1` truncated the same way, which is all ones. The value is therefore
+`peel seed0` unaltered, which is how a caller gets at all 32 bits.
+-}
+word32 : Random.Generator Int
+word32 =
+    Random.int 0 4294967295
+
+
+{-| Undo `peel`'s final xor.
+-}
+recover : Int -> Int
+recover p =
+    Bitwise.shiftRightZfBy 0 (Bitwise.xor p (Bitwise.shiftRightZfBy 22 p))
+
+
+
+-- THE GENERATOR, TRANSCRIBED
+--
+-- `next` and `initialSeed` copied from Random.gren unchanged -- their multiply
+-- reaches only 2^52.6 and is exact, so both variants below walk the same states.
+
+
+type alias State =
+    { state : Int, increment : Int }
+
+
+advance : State -> State
+advance s =
+    { s | state = Bitwise.shiftRightZfBy 0 (s.state * 1664525 + s.increment) }
+
+
+start : Int -> State
+start x =
+    let
+        s1 =
+            advance { state = 0, increment = 1013904223 }
+    in
+    advance { s1 | state = Bitwise.shiftRightZfBy 0 (s1.state + x) }
+
+
+{-| RXS-M-SH's randomised shift, ahead of the multiply. Signed, as in Random.gren.
+-}
+kernel : Int -> Int
+kernel state =
+    Bitwise.xor state (Bitwise.shiftRightZfBy (Bitwise.shiftRightZfBy 28 state + 4) state)
+
+
+{-| `peel` as written: `*` is the float64 multiply.
+-}
+peelAsWritten : State -> Int
+peelAsWritten s =
+    finish (kernel s.state * 277803737)
+
+
+{-| `peel` with the wrapping multiply RXS-M-SH specifies, and nothing else changed.
+-}
+peelExact : State -> Int
+peelExact s =
+    finish (imul (kernel s.state) 277803737)
+
+
+finish : Int -> Int
+finish word =
+    Bitwise.shiftRightZfBy 0 (Bitwise.xor (Bitwise.shiftRightZfBy 22 word) word)
+
+
+{-| `Math.imul`: multiply two 32-bit words modulo 2^32, in halves small enough
+that every partial product is exact in a float64.
+-}
+imul : Int -> Int -> Int
+imul a b =
+    let
+        aHigh =
+            Bitwise.shiftRightZfBy 16 a
+
+        aLow =
+            Bitwise.and a 0xFFFF
+
+        bHigh =
+            Bitwise.shiftRightZfBy 16 b
+
+        bLow =
+            Bitwise.and b 0xFFFF
+
+        middle =
+            Bitwise.shiftRightZfBy 0
+                (Bitwise.shiftLeftBy 16 (aHigh * bLow + aLow * bHigh))
+    in
+    Bitwise.shiftRightZfBy 0 (aLow * bLow + middle)
+
+
+
+-- MEASURING
+
+
+type alias Counts =
+    { output : Array Int
+    , wordAsWritten : Array Int
+    , wordExact : Array Int
+    , agreements : Int
+    }
+
+
+bitAt : Int -> Int -> Int
+bitAt k v =
+    Bitwise.and 1 (Bitwise.shiftRightZfBy k v)
+
+
+addBits : Int -> Array Int -> Array Int
+addBits v counters =
+    Array.indexedMap (\k c -> c + bitAt k v) counters
+
+
+{-| One pass: draw through `Random`, walk the transcription alongside it, and
+count. `agreements` is the self-check -- how many of the draws the transcription
+with `*` reproduces exactly, which is what licenses reading anything off the
+variant with `imul`.
+-}
+measure : Counts
+measure =
+    Array.foldl
+        (\_ acc ->
+            let
+                drawn =
+                    Random.step word32 acc.seed
+
+                written =
+                    peelAsWritten acc.walk
+
+                exact =
+                    peelExact acc.walk
+            in
+            { seed = drawn.seed
+            , walk = advance acc.walk
+            , counts =
+                { output = addBits drawn.value acc.counts.output
+                , wordAsWritten = addBits (recover written) acc.counts.wordAsWritten
+                , wordExact = addBits (recover exact) acc.counts.wordExact
+                , agreements =
+                    acc.counts.agreements
+                        + (if drawn.value == written then
+                            1
+
+                           else
+                            0
+                          )
+                }
+            }
+        )
+        { seed = Random.initialSeed seedNumber
+        , walk = start seedNumber
+        , counts =
+            { output = Array.repeat 32 0
+            , wordAsWritten = Array.repeat 32 0
+            , wordExact = Array.repeat 32 0
+            , agreements = 0
+            }
+        }
+        (Array.range 1 sampleCount)
+        |> .counts
+
+
+
+-- RENDERING
+
+
+{-| The share of draws in which the two output bits that make `word` bit k
+differ is that bit's count; the share in which they agree is the rest.
+-}
+agreementPercent : Int -> String
+agreementPercent count =
+    percent (sampleCount - count)
+
+
+percent : Int -> String
+percent count =
+    let
+        hundredths =
+            round (10000 * toFloat count / toFloat sampleCount)
+    in
+    String.padLeft 6 ' '
+        (String.fromInt (hundredths // 100)
+            ++ "."
+            ++ String.padLeft 2 '0' (String.fromInt (Math.modBy 100 hundredths))
+        )
+        ++ "%"
+
+
+bar : Int -> String
+bar count =
+    let
+        filled =
+            round (20 * toFloat count / toFloat sampleCount)
+    in
+    "|" ++ String.padRight 20 ' ' (String.repeat filled "#") ++ "|"
+
+
+counterAt : Int -> Array Int -> Int
+counterAt k counters =
+    Array.get k counters
+        |> Maybe.withDefault 0
+
+
+{-| Three columns on a common grid: bare number for the output, whose 32 bars
+would all be the same length, and a bar each for the two words.
+-}
+columns : String -> String -> String -> String
+columns label written exact =
+    String.padRight 21 ' ' label ++ String.padRight 33 ' ' written ++ exact
+
+
+bitTable : Counts -> String
+bitTable counts =
+    Array.range 0 31
+        |> Array.map
+            (\k ->
+                let
+                    withBar counters =
+                        percent (counterAt k counters) ++ " " ++ bar (counterAt k counters)
+                in
+                columns
+                    ("  bit " ++ String.padLeft 2 ' ' (String.fromInt k) ++ "   " ++ percent (counterAt k counts.output) ++ "  ")
+                    (withBar counts.wordAsWritten)
+                    (withBar counts.wordExact)
+            )
+        |> String.join "\n"
+
+
+tableHeading : String
+tableHeading =
+    String.join "\n"
+        [ String.repeat 11 " " ++ "Random's" ++ String.repeat 2 " " ++ "recovered `word`"
+        , columns (String.repeat 11 " " ++ "output") "as written" "with imul"
+        ]
+
+
+{-| bit 31 leftmost, so a row reads the way the number is written.
+-}
+bitRow : Int -> String
+bitRow v =
+    Array.range 0 31
+        |> Array.map
+            (\k ->
+                if bitAt (31 - k) v == 1 then
+                    "#"
+
+                else
+                    "."
+            )
+        |> String.join ""
+
+
+bitmap : String
+bitmap =
+    Array.foldl
+        (\_ acc ->
+            { walk = advance acc.walk
+            , out =
+                Array.pushLast
+                    ("  "
+                        ++ bitRow (recover (peelAsWritten acc.walk))
+                        ++ "     "
+                        ++ bitRow (recover (peelExact acc.walk))
+                    )
+                    acc.out
+            }
+        )
+        { walk = start seedNumber, out = [] }
+        (Array.range 1 bitmapRows)
+        |> .out
+        |> String.join "\n"
+
+
+
+-- REPORT
+
+
+report : String
+report =
+    let
+        counts =
+            measure
+    in
+    String.join "\n"
+        [ "`Random`'s 32-bit output word, " ++ String.fromInt sampleCount ++ " draws from Random.initialSeed " ++ String.fromInt seedNumber ++ "."
+        , ""
+        , "self-check: `peel` transcribed with `*` reproduces "
+            ++ String.fromInt counts.agreements
+            ++ "/"
+            ++ String.fromInt sampleCount
+            ++ " of them, so the only"
+        , "difference in the `imul` column below is the multiply."
+        , ""
+        , ""
+        , "How often each bit is 1. `word` is peel's value before its last step,"
+        , "recovered from the output by `word = p ^ (p >>> 22)`."
+        , ""
+        , tableHeading
+        , bitTable counts
+        , ""
+        , "The output looks like 32 fair coins, which is why this went unnoticed. The"
+        , "word it was made from does not: below bit 7 the bits are not there to be"
+        , "shifted. 277803737 is 2^28.05, so the product of it and a 32-bit word reaches"
+        , "2^60.05, a float64 holds 53 bits of that, and the lowest seven are rounded"
+        , "away before `>>> 22` goes looking for them."
+        , ""
+        , "Equivalently, without recovering anything: `word` bit k is output bit k xor"
+        , "output bit k+22, so a zero there is two bits of `Random`'s own output that are"
+        , "always equal. Bit 0 equals bit 22 in"
+            ++ agreementPercent (counterAt 0 counts.wordAsWritten)
+            ++ " of the draws above, against"
+            ++ agreementPercent (counterAt 0 counts.wordExact)
+            ++ " for"
+        , "RXS-M-SH, in which they are independent."
+        , ""
+        , ""
+        , "The same recovered `word`, one draw per row, bit 31 leftmost:"
+        , ""
+        , "  as written" ++ String.repeat 27 " " ++ "with imul"
+        , bitmap
+        , String.repeat 27 " " ++ "^^^^^^^"
+        , String.repeat 27 " " ++ "bits 0-6, the room float64 ran out of. The"
+        , String.repeat 27 " " ++ "lower the bit, the more completely it is gone."
+        ]
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram (\env -> Node.endSimpleProgram (emit env))
+
+
+emit : Node.Environment -> Task Never {}
+emit env =
+    Stream.writeLineAsBytes report env.stdout
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

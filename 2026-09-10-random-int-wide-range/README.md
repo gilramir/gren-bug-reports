@@ -23,3 +23,9 @@ is `2^32 | 0`, which is `0`, so every draw is the lower bound.
 The first row works because `-1 & 0` is `0` and a mask of `-1` is the identity —
 two truncations cancelling at the one width `core` itself uses, in
 `independentSeed`.
+
+---
+
+- **Filed as:** not yet filed
+- **Package:** `gren-lang/core`
+- **Versions:** gren 0.6.6, gren-lang/core 7.4.2, Node.js v22, Linux x86-64

@@ -30,3 +30,9 @@ eight draws differ from the reference generator for that reason.
 A second, independent defect in the same module is in
 `2026-09-10-random-int-wide-range` beside this one: `Random.int`'s power-of-two
 test truncates to int32, so a range at or above 2^32 is mishandled.
+
+---
+
+- **Filed as:** not yet filed
+- **Package:** `gren-lang/core`
+- **Versions:** gren 0.6.6, gren-lang/core 7.4.2, Node.js v22, Linux x86-64

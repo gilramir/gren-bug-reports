@@ -133,12 +133,28 @@ the mask   Bitwise.and (range - 1) (peel seed0)
                                                  -- shiftRightZfBy 0 puts the sign back
 ```
 
-Both answers happen to be the ones the untruncated arithmetic would have given.
-2^32 really is a power of two, so the branch is the right branch; a 32-bit mask
-over a 32-bit value really is the identity, so the mask is the right mask. Two
-truncations, neither of them looking at `range`, cancelling into a correct
-result. The defect is fully present in this row — at this one width it has
-nothing left to damage.
+Three coercions happen across those two lines, and only one of them loses
+anything.
+
+`range - 1` is 4294967295, which already fits in 32 bits — it *is* all ones — so
+reading it as `-1` changes how the bits are interpreted, not what they are. That
+happens twice, once in the test and once in the mask, and both times it is
+harmless: all ones is exactly the mask a 32-bit range calls for.
+
+`range` is the one that loses. Its only set bit is bit 32, the coercion discards
+it, and what the test actually sees is `0`.
+
+That loss is harmless here and nowhere else above 2^32. The test asks whether
+`(range - 1) & range` is zero, and in exact arithmetic it is, because 4294967295
+and 4294967296 share no bits — so the branch taken is the right branch. It is
+reached by a different question, though. The test that was meant to run passes
+because 2^32 is a power of two; the test that did run passes because `0` has no
+bits at all.
+
+So this is not two errors cancelling. It is one coercion that happens to be
+lossless, and one that throws away the only bit that mattered and still lands on
+the correct branch. The defect is fully present in this row — at this one width
+it has nothing left to damage.
 
 That is what makes the repair delicate rather than obvious, and it is why
 "Suggested fix" below opens with a guard that does not work. Whatever replaces

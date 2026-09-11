@@ -29,15 +29,31 @@ emit env =
         |> Task.onError (\_ -> Task.succeed {})
 
 
-cases : Array { name : String, hi : Int, range : String, note : String }
+type alias Case =
+    { name : String, hi : Int, range : String, note : String, ok : Bool }
+
+
+cases : Array Case
 cases =
-    [ { name = "int 0 0xFFFFFFFF", hi = 0xFFFFFFFF, range = "2^32", note = "all of it" }
-    , { name = "int 0 0x1FFFFFFFF", hi = 0x01FFFFFFFF, range = "2^33", note = "the low half" }
-    , { name = "int 0 0x7FFFFFFF", hi = 0x7FFFFFFF, range = "2^31", note = "all of it" }
-    , { name = "int 0 0x17FFFFFFF", hi = 0x017FFFFFFF, range = "1.5 * 2^32", note = "the low third" }
-    , { name = "int 0 0x100000000", hi = 0x0100000000, range = "2^32 + 1", note = "only 0" }
-    , { name = "int 0 0x100000001", hi = 0x0100000001, range = "2^32 + 2", note = "only 0 and 1" }
+    [ { name = "int 0 0xFFFFFFFF", hi = 0xFFFFFFFF, range = "2^32", note = "all of it", ok = True }
+    , { name = "int 0 0x1FFFFFFFF", hi = 0x01FFFFFFFF, range = "2^33", note = "the low half", ok = False }
+    , { name = "int 0 0x7FFFFFFF", hi = 0x7FFFFFFF, range = "2^31", note = "all of it", ok = True }
+    , { name = "int 0 0x17FFFFFFF", hi = 0x017FFFFFFF, range = "1.5 * 2^32", note = "the low third", ok = False }
+    , { name = "int 0 0x100000000", hi = 0x0100000000, range = "2^32 + 1", note = "only 0", ok = False }
+    , { name = "int 0 0x100000001", hi = 0x0100000001, range = "2^32 + 2", note = "only 0 and 1", ok = False }
     ]
+
+
+{-| Four columns wide, so a reader never has to work out which rows are the
+good ones.
+-}
+marker : Case -> String
+marker c =
+    if c.ok then
+        "ok  "
+
+    else
+        "BAD "
 
 
 {-| 48 divides by both 2 and 3, so every boundary below falls exactly on a
@@ -89,7 +105,7 @@ buckets lo hi =
         |> .counts
 
 
-stripRow : { name : String, hi : Int, range : String, note : String } -> String
+stripRow : Case -> String
 stripRow c =
     let
         counts =
@@ -107,22 +123,27 @@ stripRow c =
                     )
                 |> String.join ""
     in
-    "  " ++ String.padRight 21 ' ' c.name ++ drawn ++ "  " ++ c.note
+    "  " ++ marker c ++ String.padRight 19 ' ' c.name ++ drawn ++ "  " ++ c.note
 
 
 report : String
 report =
     String.join "\n"
         (Array.flatten
-            [ [ "What `int`'s test and mask actually compute. `Bitwise.and` coerces to"
+            [ [ "`ok` marks a call that reaches its whole requested interval; `BAD` one"
+              , "that does not. Each BAD row is some narrower call answered exactly;"
+              , "for two of them that narrower call is in the table too."
+              , ""
+              , ""
+              , "What `int`'s test and mask actually compute. `Bitwise.and` coerces to"
               , "int32, so both are answers about `range` modulo 2^32."
               , ""
-              , "  call                 range         range mod 2^32   (range-1) & range         mask"
+              , "      call                 range         range mod 2^32   (range-1) & range         mask"
               ]
             , Array.map decisionRow cases
             , [ ""
               , ""
-              , "Six draws from Random.initialSeed 7, ordered so that the pairs the"
+              , "Five draws from Random.initialSeed 7, ordered so that the pairs the"
               , "truncation makes indistinguishable sit next to each other:"
               , ""
               ]
@@ -173,13 +194,14 @@ flatness =
         ++ " took none."
 
 
-decisionRow : { name : String, hi : Int, range : String, note : String } -> String
+decisionRow : Case -> String
 decisionRow c =
     let
         range =
             c.hi + 1
     in
     "  "
+        ++ marker c
         ++ String.padRight 21 ' ' c.name
         ++ String.padRight 14 ' ' c.range
         ++ String.padLeft 14 ' ' (String.fromInt (modulo32 range))
@@ -194,9 +216,9 @@ modulo32 n =
     n - 4294967296 * (n // 4294967296)
 
 
-drawRow : { name : String, hi : Int, range : String, note : String } -> String
+drawRow : Case -> String
 drawRow c =
-    "  " ++ String.padRight 21 ' ' c.name ++ draws 0 c.hi
+    "  " ++ marker c ++ String.padRight 19 ' ' c.name ++ draws 0 c.hi
 
 
 draws : Int -> Int -> String
@@ -210,6 +232,6 @@ draws lo hi =
             { out = acc.out ++ [ String.padLeft 11 ' ' (String.fromInt drawn.value) ], seed = drawn.seed }
         )
         { out = [], seed = Random.initialSeed 7 }
-        [ 1, 2, 3, 4, 5, 6 ]
+        [ 1, 2, 3, 4, 5 ]
         |> .out
         |> String.join ""

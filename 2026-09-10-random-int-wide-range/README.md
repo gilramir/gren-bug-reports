@@ -42,15 +42,16 @@ Each row below is one call's own requested interval, from 0 on the left to `hi`
 on the right, cut into 48 equal buckets — 48 because it divides by both 2 and 3,
 so every boundary here lands on a bucket edge. 20000 draws from
 `Random.initialSeed 7` are dropped in. A bucket that ever received a draw is
-`#`; one that never did is `.`.
+`#`; one that never did is `.`. **`ok` marks a call that reaches its whole
+requested interval and `BAD` one that does not.**
 
 ```
-  int 0 0xFFFFFFFF     ################################################  all of it
-  int 0 0x1FFFFFFFF    ########################........................  the low half
-  int 0 0x7FFFFFFF     ################################################  all of it
-  int 0 0x17FFFFFFF    ################................................  the low third
-  int 0 0x100000000    #...............................................  only 0
-  int 0 0x100000001    #...............................................  only 0 and 1
+  ok  int 0 0xFFFFFFFF   ################################################  all of it
+  BAD int 0 0x1FFFFFFFF  ########################........................  the low half
+  ok  int 0 0x7FFFFFFF   ################################################  all of it
+  BAD int 0 0x17FFFFFFF  ################................................  the low third
+  BAD int 0 0x100000000  #...............................................  only 0
+  BAD int 0 0x100000001  #...............................................  only 0 and 1
 ```
 
 Within the part it reaches the draws are flat, not merely concentrated: for
@@ -61,37 +62,50 @@ So the draws are uniform over a *prefix* of the interval and absent from the
 rest. Nothing is out of range and nothing is biased within what it reaches; the
 interval is simply smaller than the one that was asked for.
 
-Read the rows in pairs, because that is the whole of it. `int 0 0x1FFFFFFFF`
-asks for 2^33 values and is served the stream of `int 0 0xFFFFFFFF`.
-`int 0 0x17FFFFFFF` asks for 1.5 × 2^32 and is served the stream of
-`int 0 0x7FFFFFFF` — not approximately, but the same numbers, because `m` is
-2^31 and a mask of `2^31 - 1` is exactly what the narrower call applies:
+Two of the six are correct, and they are the two whose range is a genuine power
+of two no wider than 2^32: `0xFFFFFFFF` is 2^32 exactly, `0x7FFFFFFF` is 2^31.
+The other four are wrong, and all four are wrong in the same way — **each is
+some narrower call, answered exactly.** For two of them that narrower call is
+sitting in the table beside it. Five draws from the same seed, the pairs
+adjacent:
 
 ```
-  int 0 0xFFFFFFFF      2412620543  962486949 4105077394 2526171418 1015690994 2793901850
-  int 0 0x1FFFFFFFF     2412620543  962486949 4105077394 2526171418 1015690994 2793901850
-  int 0 0x7FFFFFFF       265136895  962486949 1957593746  378687770 1015690994  646418202
-  int 0 0x17FFFFFFF      265136895  962486949 1957593746  378687770 1015690994  646418202
-  int 0 0x100000000              0          0          0          0          0          0
-  int 0 0x100000001              1          1          0          0          0          0
+  ok  int 0 0xFFFFFFFF    2412620543  962486949 4105077394 2526171418 1015690994
+  BAD int 0 0x1FFFFFFFF   2412620543  962486949 4105077394 2526171418 1015690994
+  ok  int 0 0x7FFFFFFF     265136895  962486949 1957593746  378687770 1015690994
+  BAD int 0 0x17FFFFFFF    265136895  962486949 1957593746  378687770 1015690994
+  BAD int 0 0x100000000            0          0          0          0          0
+  BAD int 0 0x100000001            1          1          0          0          0
 ```
+
+`int 0 0x1FFFFFFFF` asks for 2^33 values and is handed the stream of
+`int 0 0xFFFFFFFF`. `int 0 0x17FFFFFFF` asks for 1.5 × 2^32 and is handed the
+stream of `int 0 0x7FFFFFFF` — not approximately, but the same numbers, because
+`m` is 2^31 and a mask of `2^31 - 1` is exactly what the narrower call applies.
+There is nothing in either output to say which question it answered.
 
 `int 0 0x100000000` is the sharp one, and it is the same arithmetic with nothing
 left over: `range` is 2^32 + 1, `m` is 1, the mask is `m - 1` = 0, and every draw
 is `lo`. A generator that has stopped generating, with no error and no warning.
 `int 0 0x100000001` is one step along, `m` = 2, mask 1, and the whole of a
-four-billion-wide interval is `{0, 1}`.
+four-billion-wide interval is `{0, 1}`. Those two are narrower calls as much as
+the other pair is: `int 0 0x100000000` is `Random.int 0 0` and
+`int 0 0x100000001` is `Random.int 0 1`, exactly.
+
+"Correct" here means the interval is the one asked for. The values filling it
+still carry the separate defect in `peel` noted at the end, which is why the
+`ok` rows are `ok` about range handling and not about `Random` as a whole.
 
 What `int` decided in each case, which is the rule above applied six times:
 
 ```
-  call                 range         range mod 2^32   (range-1) & range         mask
-  int 0 0xFFFFFFFF     2^32                       0                   0   4294967295
-  int 0 0x1FFFFFFFF    2^33                       0                   0   4294967295
-  int 0 0x7FFFFFFF     2^31              2147483648                   0   2147483647
-  int 0 0x17FFFFFFF    1.5 * 2^32        2147483648                   0   2147483647
-  int 0 0x100000000    2^32 + 1                   1                   0            0
-  int 0 0x100000001    2^32 + 2                   2                   0            1
+      call                 range         range mod 2^32   (range-1) & range         mask
+  ok  int 0 0xFFFFFFFF     2^32                       0                   0   4294967295
+  BAD int 0 0x1FFFFFFFF    2^33                       0                   0   4294967295
+  ok  int 0 0x7FFFFFFF     2^31              2147483648                   0   2147483647
+  BAD int 0 0x17FFFFFFF    1.5 * 2^32        2147483648                   0   2147483647
+  BAD int 0 0x100000000    2^32 + 1                   1                   0            0
+  BAD int 0 0x100000001    2^32 + 2                   2                   0            1
 ```
 
 ## The one row that works, and why it has to keep working

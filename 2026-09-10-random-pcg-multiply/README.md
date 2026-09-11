@@ -230,6 +230,48 @@ step is its own inverse: doing it a second time gives `word` back. The number
 `Random` hands out still contains the damaged word, reversibly scrambled, and
 `word = p ^ (p >>> 22)` recovers it.
 
+Worked through on the first draw from `Random.initialSeed 7`. Forwards first,
+the way `peel` builds the number it returns:
+
+```
+  word                    1000 1111 1100 1101 1010 1000 1100 0000   2412619968
+  word >>> 22             0000 0000 0000 0000 0000 0010 0011 1111          575
+  p = word ^ (word>>>22)  1000 1111 1100 1101 1010 1010 1111 1111   2412620543
+```
+
+The xor can only alter the bottom ten bits, because `word >>> 22` is ten bits
+long and the twenty-two above it are zero. So everything in `p` from bit 22 up
+is `word`'s, carried through untouched — and shifting `p` right by 22 therefore
+lands on the same ten bits the first shift did, `575` both times. Xoring by the
+same value twice cancels:
+
+```
+  p                       1000 1111 1100 1101 1010 1010 1111 1111   2412620543
+  p >>> 22                0000 0000 0000 0000 0000 0010 0011 1111          575
+  p ^ (p >>> 22)          1000 1111 1100 1101 1010 1000 1100 0000   2412619968
+```
+
+and `word` is back. `2412620543` is the number `Random.int 0 4294967295` really
+does return for that seed today, and `2412619968` is the damaged word behind it.
+Count its trailing zeros: six. The product was 336921971827517646, just over
+2^58, so float64 held 53 of its bits and rounded the last six away — and they
+were six of the bits the final xorshift was there to fold good ones onto.
+
+The same state with a wrapping multiply, for comparison — the two outputs are
+the pair that shows up as draw 1 of the known-answer check further down:
+
+```
+  word, as written        1000 1111 1100 1101 1010 1000 1100 0000   2412619968
+  word, with imul         1000 1111 1100 1101 1010 1000 1100 1110   2412619982
+  output, as written      1000 1111 1100 1101 1010 1010 1111 1111   2412620543
+  output, with imul       1000 1111 1100 1101 1010 1010 1111 0001   2412620529
+```
+
+In the broken output, bits 0 to 5 read `111111` and so do bits 22 to 27: the
+repair copied rather than mixed. In the fixed one the low bits are `110001`
+against the same `111111` above them, which is what two independent sources
+look like.
+
 This is also the step the defect lands on, which is what makes it worse than a
 handful of wrong bits. Xoring with a zero does nothing, so where rounding has
 flattened the bottom of `word`, the repair has nothing to mix in and simply
@@ -450,6 +492,7 @@ This directory is a stock Gren application; `devbox` pins `gren` 0.6.6 and node
 | `3672204992` against `3672205017` | `./run.sh` |
 | the eight `Random.int 1 6` draws | `./run.sh` |
 | the reference stream under them | `./run.sh`, which calls `node reference.js` |
+| the worked example of the last step | `./bits.sh`, first lines of its output |
 | the bit counts | `./bits.sh` |
 | the bitmap | `./bits.sh` |
 | the 99.26 percent figure | `./bits.sh`, last paragraph of its output |

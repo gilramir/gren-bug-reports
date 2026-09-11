@@ -314,6 +314,92 @@ bitmap =
 
 
 
+-- ONE DRAW IN FULL
+
+
+firstState : State
+firstState =
+    start seedNumber
+
+
+writtenWord : Int
+writtenWord =
+    Bitwise.shiftRightZfBy 0 (kernel firstState.state * 277803737)
+
+
+exactWord : Int
+exactWord =
+    imul (kernel firstState.state) 277803737
+
+
+groupedBits : Int -> String
+groupedBits v =
+    Array.range 0 31
+        |> Array.map
+            (\i ->
+                let
+                    bit =
+                        if bitAt (31 - i) v == 1 then
+                            "1"
+
+                        else
+                            "0"
+                in
+                if i > 0 && Math.modBy 4 i == 0 then
+                    " " ++ bit
+
+                else
+                    bit
+            )
+        |> String.join ""
+
+
+binaryRow : String -> Int -> String
+binaryRow label v =
+    "  "
+        ++ String.padRight 24 ' ' label
+        ++ groupedBits v
+        ++ "   "
+        ++ String.padLeft 10 ' ' (String.fromInt v)
+
+
+shifted : Int -> Int
+shifted v =
+    Bitwise.shiftRightZfBy 22 v
+
+
+folded : Int -> Int
+folded v =
+    Bitwise.shiftRightZfBy 0 (Bitwise.xor (shifted v) v)
+
+
+worked : String
+worked =
+    String.join "\n"
+        [ "One draw in full, the first from Random.initialSeed " ++ String.fromInt seedNumber ++ ". Forwards, the"
+        , "way peel builds the number it returns:"
+        , ""
+        , binaryRow "word" writtenWord
+        , binaryRow "word >>> 22" (shifted writtenWord)
+        , binaryRow "p = word ^ (word>>>22)" (folded writtenWord)
+        , ""
+        , "The xor reaches only the bottom ten bits, so everything from bit 22 up is"
+        , "word's, carried through. Shifting p right by 22 lands on the same ten bits"
+        , "the first shift did, and xoring by the same value twice cancels:"
+        , ""
+        , binaryRow "p" (folded writtenWord)
+        , binaryRow "p >>> 22" (shifted (folded writtenWord))
+        , binaryRow "p ^ (p >>> 22)" (folded (folded writtenWord))
+        , ""
+        , "which is word again. The same state with a wrapping multiply:"
+        , ""
+        , binaryRow "word, as written" writtenWord
+        , binaryRow "word, with imul" exactWord
+        , binaryRow "output, as written" (folded writtenWord)
+        , binaryRow "output, with imul" (folded exactWord)
+        ]
+
+
 -- REPORT
 
 
@@ -324,7 +410,10 @@ report =
             measure
     in
     String.join "\n"
-        [ "`Random`'s 32-bit output word, " ++ String.fromInt sampleCount ++ " draws from Random.initialSeed " ++ String.fromInt seedNumber ++ "."
+        [ worked
+        , ""
+        , ""
+        , "`Random`'s 32-bit output word, " ++ String.fromInt sampleCount ++ " draws from Random.initialSeed " ++ String.fromInt seedNumber ++ "."
         , ""
         , "self-check: `peel` transcribed with `*` reproduces "
             ++ String.fromInt counts.agreements

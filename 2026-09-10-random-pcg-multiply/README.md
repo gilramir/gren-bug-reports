@@ -511,7 +511,8 @@ This directory is a stock Gren application; `devbox` pins `gren` 0.6.6 and node
 
 ## A second, independent defect in the same module
 
-`2026-09-10-random-int-wide-range` beside this directory: `Random.int`'s
+`2026-09-10-random-int-wide-range` beside this directory, filed as
+[gren-lang/core#147](https://github.com/gren-lang/core/issues/147): `Random.int`'s
 power-of-two test and the mask it selects are both answers about an int32
 truncation, so a range at or above 2^32 is mishandled. It was found while reading
 `Random` for this one and shares nothing with it mechanically — fixing either

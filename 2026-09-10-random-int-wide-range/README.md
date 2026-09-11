@@ -241,6 +241,6 @@ nothing mechanically: fixing either leaves the other standing.
 
 ---
 
-- **Filed as:** not yet filed
+- **Filed as:** [gren-lang/core#147](https://github.com/gren-lang/core/issues/147)
 - **Package:** `gren-lang/core`
 - **Versions:** gren 0.6.6, gren-lang/core 7.4.2, Node.js v22, Linux x86-64

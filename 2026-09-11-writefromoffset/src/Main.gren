@@ -1,0 +1,53 @@
+module Main exposing (main)
+
+import Bytes exposing (Bytes)
+import FileSystem
+import FileSystem.FileHandle as FileHandle
+import FileSystem.Path as Path
+import Init
+import Node exposing (Environment)
+import Stream
+import Task exposing (Task)
+
+
+{-| `FileSystem.FileHandle.writeFromOffset` ignores its offset.
+
+The file starts as ten `A`s. Two `Z`s are written at offset 5. What should come
+back is `AAAAAZZAAA`; what does come back is `ZZAAAAAAAA`.
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Init.await FileSystem.initialize <| \fsPermission ->
+        run fsPermission
+            |> Task.onError (\err -> Task.succeed ("failed: " ++ FileSystem.errorToString err))
+            |> Task.andThen
+                (\got ->
+                    Stream.writeLineAsBytes
+                        ("wrote \"ZZ\" at offset 5 into \"AAAAAAAAAA\"\n  expected  AAAAAZZAAA\n  got       " ++ got)
+                        env.stdout
+                )
+            |> Task.onError (\_ -> Task.succeed env.stdout)
+            |> Node.endSimpleProgram
+
+
+run : FileSystem.Permission -> Task FileSystem.Error String
+run fsPermission =
+    let
+        path =
+            Path.fromPosixString "/tmp/gren-writefromoffset.bin"
+    in
+    FileSystem.writeFile fsPermission (Bytes.fromString "AAAAAAAAAA") path
+        |> Task.andThen
+            (\_ -> FileHandle.openForWrite fsPermission FileHandle.ExpectExisting path)
+        |> Task.andThen
+            (\fh ->
+                FileHandle.writeFromOffset fh 5 (Bytes.fromString "ZZ")
+                    |> Task.andThen (\_ -> FileHandle.close fh)
+            )
+        |> Task.andThen (\_ -> FileSystem.readFile fsPermission path)
+        |> Task.map (\bytes -> Maybe.withDefault "<not utf-8>" (Bytes.toString bytes))

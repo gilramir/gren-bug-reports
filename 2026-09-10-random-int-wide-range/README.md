@@ -38,20 +38,34 @@ with no way to tell from the result that it happened.
 
 ## What that produces
 
-`./run.sh`, first what `int` decides:
+Each row below is one call's own requested interval, from 0 on the left to `hi`
+on the right, cut into 48 equal buckets — 48 because it divides by both 2 and 3,
+so every boundary here lands on a bucket edge. 20000 draws from
+`Random.initialSeed 7` are dropped in. A bucket that ever received a draw is
+`#`; one that never did is `.`.
 
 ```
-  call                 range         range mod 2^32   (range-1) & range         mask
-  int 0 0xFFFFFFFF     2^32                       0                   0   4294967295
-  int 0 0x1FFFFFFFF    2^33                       0                   0   4294967295
-  int 0 0x7FFFFFFF     2^31              2147483648                   0   2147483647
-  int 0 0x17FFFFFFF    1.5 * 2^32        2147483648                   0   2147483647
-  int 0 0x100000000    2^32 + 1                   1                   0            0
-  int 0 0x100000001    2^32 + 2                   2                   0            1
+  int 0 0xFFFFFFFF     ################################################  all of it
+  int 0 0x1FFFFFFFF    ########################........................  the low half
+  int 0 0x7FFFFFFF     ################################################  all of it
+  int 0 0x17FFFFFFF    ################................................  the low third
+  int 0 0x100000000    #...............................................  only 0
+  int 0 0x100000001    #...............................................  only 0 and 1
 ```
 
-and then six draws from `Random.initialSeed 7`, ordered so that the pairs the
-truncation makes indistinguishable sit next to each other:
+Within the part it reaches the draws are flat, not merely concentrated: for
+the 1.5 * 2^32 row the 16 occupied buckets took between 1190 and 1294
+of the 20000 draws, and the other 32 took none.
+
+So the draws are uniform over a *prefix* of the interval and absent from the
+rest. Nothing is out of range and nothing is biased within what it reaches; the
+interval is simply smaller than the one that was asked for.
+
+Read the rows in pairs, because that is the whole of it. `int 0 0x1FFFFFFFF`
+asks for 2^33 values and is served the stream of `int 0 0xFFFFFFFF`.
+`int 0 0x17FFFFFFF` asks for 1.5 × 2^32 and is served the stream of
+`int 0 0x7FFFFFFF` — not approximately, but the same numbers, because `m` is
+2^31 and a mask of `2^31 - 1` is exactly what the narrower call applies:
 
 ```
   int 0 0xFFFFFFFF      2412620543  962486949 4105077394 2526171418 1015690994 2793901850
@@ -62,18 +76,23 @@ truncation makes indistinguishable sit next to each other:
   int 0 0x100000001              1          1          0          0          0          0
 ```
 
-Read the rows in pairs. `int 0 0x1FFFFFFFF` asks for 2^33 values and is served
-the stream of `int 0 0xFFFFFFFF`, the low half of what it asked for.
-`int 0 0x17FFFFFFF` asks for 1.5 × 2^32 and is served the stream of
-`int 0 0x7FFFFFFF` — not approximately, but the same six numbers, because `m` is
-2^31 and a mask of `2^31 - 1` is exactly what the narrower call would apply. It
-reaches the low third of its interval and the upper two thirds are unreachable.
-
 `int 0 0x100000000` is the sharp one, and it is the same arithmetic with nothing
 left over: `range` is 2^32 + 1, `m` is 1, the mask is `m - 1` = 0, and every draw
 is `lo`. A generator that has stopped generating, with no error and no warning.
 `int 0 0x100000001` is one step along, `m` = 2, mask 1, and the whole of a
-4-billion-wide interval is `{0, 1}`.
+four-billion-wide interval is `{0, 1}`.
+
+What `int` decided in each case, which is the rule above applied six times:
+
+```
+  call                 range         range mod 2^32   (range-1) & range         mask
+  int 0 0xFFFFFFFF     2^32                       0                   0   4294967295
+  int 0 0x1FFFFFFFF    2^33                       0                   0   4294967295
+  int 0 0x7FFFFFFF     2^31              2147483648                   0   2147483647
+  int 0 0x17FFFFFFF    1.5 * 2^32        2147483648                   0   2147483647
+  int 0 0x100000000    2^32 + 1                   1                   0            0
+  int 0 0x100000001    2^32 + 2                   2                   0            1
+```
 
 **The first row works only by coincidence**, and it is the row that matters most,
 because it is the call the module itself makes — `Random.int 0 0xFFFFFFFF` in
@@ -136,8 +155,7 @@ is the failure that gets diagnosed three modules away from its cause.
 ## Running it
 
 This directory is a stock Gren application; `devbox` pins `gren` 0.6.6 and node
-22. `./run.sh` prints the decision table and the draws above, and `src/Main.gren`
-is the whole of it.
+22. `./run.sh` prints every block above, and `src/Main.gren` is the whole of it.
 
 ## A second, independent defect in the same module
 

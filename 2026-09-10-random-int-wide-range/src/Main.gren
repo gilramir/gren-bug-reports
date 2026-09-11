@@ -29,15 +29,85 @@ emit env =
         |> Task.onError (\_ -> Task.succeed {})
 
 
-cases : Array { name : String, hi : Int, range : String }
+cases : Array { name : String, hi : Int, range : String, note : String }
 cases =
-    [ { name = "int 0 0xFFFFFFFF", hi = 0xFFFFFFFF, range = "2^32" }
-    , { name = "int 0 0x1FFFFFFFF", hi = 0x01FFFFFFFF, range = "2^33" }
-    , { name = "int 0 0x7FFFFFFF", hi = 0x7FFFFFFF, range = "2^31" }
-    , { name = "int 0 0x17FFFFFFF", hi = 0x017FFFFFFF, range = "1.5 * 2^32" }
-    , { name = "int 0 0x100000000", hi = 0x0100000000, range = "2^32 + 1" }
-    , { name = "int 0 0x100000001", hi = 0x0100000001, range = "2^32 + 2" }
+    [ { name = "int 0 0xFFFFFFFF", hi = 0xFFFFFFFF, range = "2^32", note = "all of it" }
+    , { name = "int 0 0x1FFFFFFFF", hi = 0x01FFFFFFFF, range = "2^33", note = "the low half" }
+    , { name = "int 0 0x7FFFFFFF", hi = 0x7FFFFFFF, range = "2^31", note = "all of it" }
+    , { name = "int 0 0x17FFFFFFF", hi = 0x017FFFFFFF, range = "1.5 * 2^32", note = "the low third" }
+    , { name = "int 0 0x100000000", hi = 0x0100000000, range = "2^32 + 1", note = "only 0" }
+    , { name = "int 0 0x100000001", hi = 0x0100000001, range = "2^32 + 2", note = "only 0 and 1" }
     ]
+
+
+{-| 48 divides by both 2 and 3, so every boundary below falls exactly on a
+bucket edge and no bucket is left partly covered.
+-}
+bucketCount : Int
+bucketCount =
+    48
+
+
+drawCount : Int
+drawCount =
+    20000
+
+
+{-| The requested interval [lo, hi] cut into equal buckets, and how many of
+`drawCount` draws land in each.
+-}
+buckets : Int -> Int -> Array Int
+buckets lo hi =
+    let
+        range =
+            hi - lo + 1
+    in
+    Array.foldl
+        (\_ acc ->
+            let
+                drawn =
+                    Random.step (Random.int lo hi) acc.seed
+
+                index =
+                    (drawn.value - lo) * bucketCount // range
+            in
+            { seed = drawn.seed
+            , counts =
+                Array.indexedMap
+                    (\i c ->
+                        if i == index then
+                            c + 1
+
+                        else
+                            c
+                    )
+                    acc.counts
+            }
+        )
+        { seed = Random.initialSeed 7, counts = Array.repeat bucketCount 0 }
+        (Array.range 1 drawCount)
+        |> .counts
+
+
+stripRow : { name : String, hi : Int, range : String, note : String } -> String
+stripRow c =
+    let
+        counts =
+            buckets 0 c.hi
+
+        drawn =
+            counts
+                |> Array.map
+                    (\n ->
+                        if n > 0 then
+                            "#"
+
+                        else
+                            "."
+                    )
+                |> String.join ""
+    in
+    "  " ++ String.padRight 21 ' ' c.name ++ drawn ++ "  " ++ c.note
 
 
 report : String
@@ -57,11 +127,53 @@ report =
               , ""
               ]
             , Array.map drawRow cases
+            , [ ""
+              , ""
+              , "Where the draws land. Each row is that call's own requested interval"
+              , "cut into " ++ String.fromInt bucketCount ++ " equal buckets, left edge 0 and right edge hi, with"
+              , String.fromInt drawCount ++ " draws dropped into it. A bucket that ever received a draw is"
+              , "`#`; one that never did is `.`."
+              , ""
+              ]
+            , Array.map stripRow cases
+            , [ ""
+              , flatness
+              ]
             ]
         )
 
 
-decisionRow : { name : String, hi : Int, range : String } -> String
+{-| The draws are not merely concentrated in the low part of the interval: they
+are flat across it and absent above it. Reported for the 1.5 * 2^32 row.
+-}
+flatness : String
+flatness =
+    let
+        occupied =
+            buckets 0 0x017FFFFFFF
+                |> Array.keepIf (\n -> n > 0)
+
+        low =
+            Array.foldl min drawCount occupied
+
+        high =
+            Array.foldl max 0 occupied
+    in
+    "Within the part it reaches the draws are flat, not merely concentrated: for\n"
+        ++ "the 1.5 * 2^32 row the "
+        ++ String.fromInt (Array.length occupied)
+        ++ " occupied buckets took between "
+        ++ String.fromInt low
+        ++ " and "
+        ++ String.fromInt high
+        ++ "\nof the "
+        ++ String.fromInt drawCount
+        ++ " draws, and the other "
+        ++ String.fromInt (bucketCount - Array.length occupied)
+        ++ " took none."
+
+
+decisionRow : { name : String, hi : Int, range : String, note : String } -> String
 decisionRow c =
     let
         range =
@@ -82,7 +194,7 @@ modulo32 n =
     n - 4294967296 * (n // 4294967296)
 
 
-drawRow : { name : String, hi : Int, range : String } -> String
+drawRow : { name : String, hi : Int, range : String, note : String } -> String
 drawRow c =
     "  " ++ String.padRight 21 ' ' c.name ++ draws 0 c.hi
 

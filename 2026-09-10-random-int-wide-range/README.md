@@ -94,13 +94,56 @@ What `int` decided in each case, which is the rule above applied six times:
   int 0 0x100000001    2^32 + 2                   2                   0            1
 ```
 
-**The first row works only by coincidence**, and it is the row that matters most,
-because it is the call the module itself makes — `Random.int 0 0xFFFFFFFF` in
-`independentSeed`. `range - 1` truncates to `-1` and `range` truncates to `0`, so
-`-1 & 0` is `0`: the test says "power of two", which for 2^32 is the right answer
-reached for the wrong reason, and a mask of `-1` then leaves `peel`'s 32 bits
-alone, which is also right. Two wrongs, one usable result, at exactly the one
-width `core` depends on.
+## The one row that works, and why it has to keep working
+
+`int 0 0xFFFFFFFF` is not a hypothetical caller. It is the only `Random.int`
+call in the whole of `core`, and `independentSeed` makes it three times for
+every seed it hands out:
+
+```gren
+independentSeed : Generator Seed
+independentSeed =
+    Generator <|
+        \seed0 ->
+            let
+                gen =
+                    int 0 0xFFFFFFFF
+
+                makeIndependentSeed state b c =
+                    next <| Seed { state = state, increment = Bitwise.shiftRightZfBy 0 (Bitwise.or 1 (Bitwise.xor b c)) }
+            in
+            step (map3 makeIndependentSeed gen gen gen) seed0
+```
+
+That is the `m = 0` case of the rule, and it is worth following both truncations
+through, because neither one is an answer about `range`:
+
+```
+range      = 0xFFFFFFFF - 0 + 1 = 4294967296     -- 2^32, exact in a float64
+range - 1                       = 4294967295
+
+the test   Bitwise.and (range - 1) range
+  range - 1 as int32            = -1             -- all 32 bits set
+  range     as int32            =  0             -- its one set bit is bit 32, out of range
+  -1 & 0                        =  0             -- reads as "power of two": fast path
+
+the mask   Bitwise.and (range - 1) (peel seed0)
+  range - 1 as int32            = -1
+  -1 & x                        =  x             -- the identity; the enclosing
+                                                 -- shiftRightZfBy 0 puts the sign back
+```
+
+Both answers happen to be the ones the untruncated arithmetic would have given.
+2^32 really is a power of two, so the branch is the right branch; a 32-bit mask
+over a 32-bit value really is the identity, so the mask is the right mask. Two
+truncations, neither of them looking at `range`, cancelling into a correct
+result. The defect is fully present in this row — at this one width it has
+nothing left to damage.
+
+That is what makes the repair delicate rather than obvious, and it is why
+"Suggested fix" below opens with a guard that does not work. Whatever replaces
+the test has to keep 2^32 on the fast path, because 2^32 is where `core` itself
+lives.
 
 ## Cause
 

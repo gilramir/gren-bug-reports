@@ -1,22 +1,20 @@
 module Main exposing (main)
 
-
+import Bitwise
 import Node
 import Random
 import Stream
 import Task exposing (Task)
 
 
-{-| `Random.int`'s power-of-two test is
+{-| `Random.int` picks between two algorithms with
 
     if (Bitwise.and (range - 1) range) == 0 then
 
-and `Bitwise.and` is JavaScript `&`, which coerces both operands to int32. An
-`Int` is a float64 and holds more than that, so once `range` reaches 2^32 both
-the test and the mask it selects are answers about a truncation.
-
-`range` for the second row is 2^32 + 1, so `range - 1` is 2^32, which masks to
-`0` — and every draw is the lower bound.
+and masks with `range - 1` when the answer is yes. `Bitwise.and` is JavaScript
+`&`, which coerces each operand to a signed 32-bit integer on its own. An `Int`
+is a float64 and holds far more, so for a range of 2^32 or wider both the test
+and the mask are answers about `range` modulo 2^32 rather than about `range`.
 -}
 main : Node.SimpleProgram a
 main =
@@ -31,21 +29,62 @@ emit env =
         |> Task.onError (\_ -> Task.succeed {})
 
 
+cases : Array { name : String, hi : Int, range : String }
+cases =
+    [ { name = "int 0 0xFFFFFFFF", hi = 0xFFFFFFFF, range = "2^32" }
+    , { name = "int 0 0x1FFFFFFFF", hi = 0x01FFFFFFFF, range = "2^33" }
+    , { name = "int 0 0x7FFFFFFF", hi = 0x7FFFFFFF, range = "2^31" }
+    , { name = "int 0 0x17FFFFFFF", hi = 0x017FFFFFFF, range = "1.5 * 2^32" }
+    , { name = "int 0 0x100000000", hi = 0x0100000000, range = "2^32 + 1" }
+    , { name = "int 0 0x100000001", hi = 0x0100000001, range = "2^32 + 2" }
+    ]
+
+
 report : String
 report =
     String.join "\n"
-        [ "six Random.int draws from Random.initialSeed 7, per range"
-        , ""
-        , "  int 0 0xFFFFFFFF   range 2^32     " ++ draws 0 0xFFFFFFFF
-        , "  int 0 0x100000000  range 2^32+1   " ++ draws 0 0x100000000
-        , "  int 0 0x17FFFFFFF  range 1.5*2^32 " ++ draws 0 0x17FFFFFFF
-        , ""
-        , "The second row is the defect: `range - 1` is 2^32, which masks to 0."
-        , "The third reaches the low third of its interval and no further."
-        , "The first works, and is the call `independentSeed` itself makes:"
-        , "`-1 & 0` is 0 and a mask of -1 is the identity, so two truncations"
-        , "cancel at exactly that one width."
-        ]
+        (Array.flatten
+            [ [ "What `int`'s test and mask actually compute. `Bitwise.and` coerces to"
+              , "int32, so both are answers about `range` modulo 2^32."
+              , ""
+              , "  call                 range         range mod 2^32   (range-1) & range         mask"
+              ]
+            , Array.map decisionRow cases
+            , [ ""
+              , ""
+              , "Six draws from Random.initialSeed 7, ordered so that the pairs the"
+              , "truncation makes indistinguishable sit next to each other:"
+              , ""
+              ]
+            , Array.map drawRow cases
+            ]
+        )
+
+
+decisionRow : { name : String, hi : Int, range : String } -> String
+decisionRow c =
+    let
+        range =
+            c.hi + 1
+    in
+    "  "
+        ++ String.padRight 21 ' ' c.name
+        ++ String.padRight 14 ' ' c.range
+        ++ String.padLeft 14 ' ' (String.fromInt (modulo32 range))
+        ++ String.padLeft 20 ' ' (String.fromInt (Bitwise.and (range - 1) range))
+        ++ String.padLeft 13 ' ' (String.fromInt (Bitwise.shiftRightZfBy 0 (Bitwise.and (range - 1) 0xFFFFFFFF)))
+
+
+{-| `range` modulo 2^32, done in float arithmetic so it is not itself truncated.
+-}
+modulo32 : Int -> Int
+modulo32 n =
+    n - 4294967296 * (n // 4294967296)
+
+
+drawRow : { name : String, hi : Int, range : String } -> String
+drawRow c =
+    "  " ++ String.padRight 21 ' ' c.name ++ draws 0 c.hi
 
 
 draws : Int -> Int -> String
@@ -56,9 +95,9 @@ draws lo hi =
                 drawn =
                     Random.step (Random.int lo hi) acc.seed
             in
-            { out = acc.out ++ [ String.fromInt drawn.value ], seed = drawn.seed }
+            { out = acc.out ++ [ String.padLeft 11 ' ' (String.fromInt drawn.value) ], seed = drawn.seed }
         )
         { out = [], seed = Random.initialSeed 7 }
         [ 1, 2, 3, 4, 5, 6 ]
         |> .out
-        |> String.join " "
+        |> String.join ""

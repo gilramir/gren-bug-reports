@@ -7,7 +7,7 @@ import Stream
 import Task exposing (Task)
 
 
-{-| `Random.peel` is PCG's RXS-M-SH and multiplies a 32-bit word by `277803737`
+{-| `Random.peel` is PCG's RXS-M-XS and multiplies a 32-bit word by `277803737`
 modulo 2^32. In Gren that `*` is a float64 multiply, so the product reaches 2^60
 and the low bits are gone before `shiftRightZfBy 22` reads them.
 

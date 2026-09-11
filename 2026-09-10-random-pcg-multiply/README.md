@@ -13,7 +13,7 @@ API. Every figure below names the command that prints it.
 ## Summary
 
 `Random.peel` is the heart of the module — the function that turns a seed into a
-random 32-bit number. It implements PCG's RXS-M-SH, and its own comment cites the
+random 32-bit number. It implements PCG's RXS-M-XS, and its own comment cites the
 reference:
 
 ```gren
@@ -24,23 +24,88 @@ word =
     (Bitwise.xor state (Bitwise.shiftRightZfBy ((Bitwise.shiftRightZfBy 28 state) + 4) state)) * 277803737
 ```
 
-That `*` does not do what the algorithm needs. Up to seven bits at the bottom of
-the value are lost to rounding before the next step goes looking for them, so the
-low bits of the numbers `Random` hands out are not the ones RXS-M-SH specifies.
-They are an artefact of float64 rounding, and the measurement below shows how
-completely: bit 0 of the multiply's result survives in 0.74 percent of draws.
+That `*` does not do what the algorithm needs. Rounding destroys up to seven
+bits at the bottom of the value, and it destroys them before the step that was
+meant to read them, so the low bits of the numbers `Random` hands out are not
+the ones RXS-M-XS specifies. The measurement below says how thoroughly. Bit 0 of
+the multiply's result should be set in half of all draws; it is set in 0.74
+percent of them, because in the other 99 percent the product was too large for a
+float64 to hold and the bit was rounded to zero.
 
 The numbers are still well spread out — this is **not** a "random numbers come
-out in a pattern" report, and nobody's dice are landing on six. What is broken is
-that `Random` is not the generator its documentation names, so the cited
-reference cannot be used to predict, test or reproduce the stream.
+out in a pattern" report. What is broken is that `Random` is not the generator
+its documentation names, so the cited reference cannot be used to predict, test
+or reproduce the stream.
+
+## What `peel` is supposed to do
+
+PCG stands for Permuted Congruential Generator, and the two words are its two
+halves.
+
+The *congruential* half is `next`: an ordinary linear congruential generator,
+`state * 1664525 + increment`, kept to 32 bits. An LCG is fast and its period is
+guaranteed, but on its own it is a poor source of random numbers, and its low
+bits are the worst part of it — taken modulo a power of two, bit 0 of an LCG
+merely alternates, bit 1 repeats every four steps, and only the top bits look
+random at all.
+
+The *permuted* half is `peel`, and it is the idea the generator is named for.
+Rather than replace the LCG, take its state and run it through a cheap, fixed
+scrambling function chosen so that the quality concentrated in the top bits is
+spread over the whole word. So the shifting in `peel` is not a flourish added to
+make the numbers look more random. It is the algorithm — the P in PCG — and each
+step in it has a job. The variant here is `pcg_output_rxs_m_xs_32_32`, which in
+`imneme/pcg-c`'s `pcg_variants.h` reads:
+
+```c
+inline uint32_t pcg_output_rxs_m_xs_32_32(uint32_t state)
+{
+    uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+```
+
+`Random.gren`'s two lines are that function transliterated, and its name is the
+initials of its three steps.
+
+**RXS, a random xorshift.** `state ^ (state >> ((state >> 28) + 4))`. Xoring a
+number with a shifted copy of itself drags high bits down into low positions,
+which is exactly what an LCG's state needs. What makes it *random* is that the
+distance is not fixed: it is read off the top four bits of the state itself, so
+it varies between 4 and 19 according to the data. That is deliberate. A shift by
+a constant is a linear operation, and a well-known family of statistical tests
+exists to detect precisely that kind of linearity; letting the data choose the
+distance breaks it.
+
+**M, a multiply.** `* 277803737`, modulo 2^32. The constant is odd, which makes
+multiplying by it reversible, so no information is lost and the generator's
+period is untouched. Where the xorshift carried information downwards, a
+multiply carries it upwards, so between them every bit of the input can reach
+every bit of the output.
+
+**XS, a second xorshift, this time by a fixed 22.** `word ^ (word >> 22)`. This
+one is a repair, and "Undoing `peel`'s last step" below says what it repairs and
+why 22.
+
+A note on the name while we are here. The comment calls the variant RXS-M-SH,
+and there is no such output function: the suffixes used in `pcg_variants.h` are
+`_m`, `_xs`, `_rr`, `_rs` and `_xsl_rr`, with no `_sh` among them, and the body
+quoted above is the `_xs` one. The last step is a xorshift, so RXS-M-XS is the
+name. Worth correcting in passing, though it is cosmetic beside the arithmetic.
 
 ## What the algorithm asks for, and what Gren does
 
-RXS-M-SH says: multiply the working value by `277803737`, and **keep only the
+RXS-M-XS says: multiply the working value by `277803737`, and **keep only the
 bottom 32 bits of the answer**. Throwing the top away is the point — that is what
 "modulo 2^32" means, and it is free in C, where a `uint32_t` multiply wraps round
 on its own.
+
+Both of the references cited in `Random.gren`'s own comment say so. In the
+paper, §6.3.4's permutation takes a w-bit word and returns one, so every step
+inside it, the multiply included, is mod 2^w. In `pcg_variants.h` the types
+carry it: the state, the product and the return are all `uint32_t`, and C
+defines unsigned arithmetic as wrapping modulo 2^32 rather than widening
+(C11 §6.2.5p9).
 
 Gren's `Int` is a JavaScript number, which is a float64. A float64 holds about 15
 to 16 decimal digits — 53 binary digits — and this product needs up to 60. So the
@@ -50,7 +115,7 @@ the ones at the *bottom*: exactly the ones the algorithm wanted.
 It is the pocket-calculator problem. Ask a ten-digit calculator for
 `123456789 × 987654321` and it answers `1.219326311e17`. The true product is
 `121932631112635269`, and if you now ask it for the last four digits, it cannot
-tell you — it never kept them. RXS-M-SH's next step asks precisely that.
+tell you — it never kept them. RXS-M-XS's next step asks precisely that.
 
 One value, both ways:
 
@@ -79,7 +144,7 @@ state =
     Bitwise.xor 2000000000 1
 
 
--- RXS-M-SH's middle step: multiply by the magic constant, keep 32 bits
+-- RXS-M-XS's middle step: multiply by the magic constant, keep 32 bits
 lowBits : Int -> Int
 lowBits n =
     Bitwise.shiftRightZfBy 0 (n * 277803737)
@@ -94,7 +159,7 @@ Eight `Random.int 1 6` draws from `Random.initialSeed 7`:
 | | stream |
 |---|---|
 | `gren-lang/core` 7.4.2 | `6 4 5 5 3 3 6 4` |
-| RXS-M-SH, exact arithmetic | `4 3 5 1 5 5 6 3` |
+| RXS-M-XS, exact arithmetic | `4 3 5 1 5 5 6 3` |
 
 Both rows come from `./run.sh`. The second is `reference.js`, an independent
 implementation of the same generator in JavaScript `BigInt` — `next`, `peel`, the
@@ -152,10 +217,33 @@ correct uniform value over 0 to 2^32-1.
 Bitwise.shiftRightZfBy 0 (Bitwise.xor (Bitwise.shiftRightZfBy 22 word) word)
 ```
 
+It does that because a multiply only stirs upwards. Change one bit of what goes
+in, and the product can change at that place and at every place above it, never
+below — the same way that in long multiplication a digit affects its own column
+and the carries going left. So when the multiply is done the top of `word` is
+well mixed and the bottom barely is. Shifting right by 22 lays the top ten bits
+over the bottom ten, and the xor mixes them in, which spreads the good stirring
+across all 32. The distance, 22, is the one PCG picks for a 32-bit word.
+
 Shifting a 32-bit value right by 22 twice pushes everything off the end, so this
 step is its own inverse: doing it a second time gives `word` back. The number
 `Random` hands out still contains the damaged word, reversibly scrambled, and
 `word = p ^ (p >>> 22)` recovers it.
+
+This is also the step the defect lands on, which is what makes it worse than a
+handful of wrong bits. Xoring with a zero does nothing, so where rounding has
+flattened the bottom of `word`, the repair has nothing to mix in and simply
+copies the top bits down unchanged:
+
+    output bit k  =  word bit k xor word bit k+22  =  0 xor word bit k+22
+
+and output bit k+22 is that same bit again, the shift never reaching further
+down than bit 9. The step whose whole purpose is to protect the low bits is
+turned into a bit-duplicator: **the low bits of a number `Random` returns are
+copies of bits 22 and up of that same number.** How often depends on how many
+bits rounding took, which depends on the size of the product — bit 0 is a copy
+of bit 22 in 99.26 percent of draws, thinning to bit 6, a copy of bit 28 in
+52.19 percent. Everything measured below is that paragraph counted.
 
 ### The count
 
@@ -225,14 +313,15 @@ set bit and `.` for a clear one, bit 31 on the left:
 ```
 
 Left is `Random` today; right is the same seed with the multiply fixed. Every row
-on the left ends in blanks.
+on the left ends in blanks, bar the one that keeps a `#` at bit 2 — a draw whose
+product was small enough to lose fewer bits, the 2.57 percent in the count above.
 
 ### Stated without undoing anything
 
 The recovered word's bit k is just output bit k xor output bit k+22, so a zero
 there means two bits of `Random`'s own published output that are equal. Reading
 the same measurement that way: **bit 0 of `Random.int 0 4294967295` equals bit 22
-in 99.26 percent of draws**, against 49.93 for RXS-M-SH, in which they are
+in 99.26 percent of draws**, against 49.93 for RXS-M-XS, in which they are
 independent. No recovery step, no reference implementation, just two bits of the
 output.
 
@@ -252,9 +341,10 @@ other multiply in the module is safe by luck rather than by design:
 
 ## Suggested fix
 
-`Math.imul` is the 32-bit wrapping multiply and is the operation RXS-M-SH asks
-for. A one-line change to `peel`'s kernel path, or to whatever helper the module
-is given:
+`Math.imul` is the 32-bit wrapping multiply, which is the multiply RXS-M-XS is
+specified with — §6.3.4's w-bit permutation and `pcg_variants.h`'s `uint32_t`
+product, both cited above. A one-line change to `peel`'s kernel path, or to
+whatever helper the module is given:
 
 ```js
 var word = Math.imul(state ^ (state >>> ((state >>> 28) + 4)), 277803737);
@@ -281,7 +371,7 @@ eight. It asserts two different kinds of thing on purpose:
 **A. A property, carrying no expected values at all.** Over 100000 draws of
 `Random.int 0 4294967295` from `Random.initialSeed 7` it measures how often
 output bit k agrees with output bit k+22, for k from 0 to 6. That pair is
-independent in any correct RXS-M-SH, so the answer has to be near 50 percent,
+independent in any correct RXS-M-XS, so the answer has to be near 50 percent,
 and there is nothing here to take on faith — no reference implementation, no
 pinned numbers. This is the check that says whether the fix worked. The
 tolerance is 1.50 percentage points, about ten standard errors at this sample

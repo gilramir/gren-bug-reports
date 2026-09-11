@@ -80,7 +80,7 @@ start x =
     advance { s1 | state = Bitwise.shiftRightZfBy 0 (s1.state + x) }
 
 
-{-| RXS-M-SH's randomised shift, ahead of the multiply. Signed, as in Random.gren.
+{-| RXS-M-XS's randomised shift, ahead of the multiply. Signed, as in Random.gren.
 -}
 kernel : Int -> Int
 kernel state =
@@ -94,7 +94,7 @@ peelAsWritten s =
     finish (kernel s.state * 277803737)
 
 
-{-| `peel` with the wrapping multiply RXS-M-SH specifies, and nothing else changed.
+{-| `peel` with the wrapping multiply RXS-M-XS specifies, and nothing else changed.
 -}
 peelExact : State -> Int
 peelExact s =
@@ -353,7 +353,7 @@ report =
             ++ " of the draws above, against"
             ++ agreementPercent (counterAt 0 counts.wordExact)
             ++ " for"
-        , "RXS-M-SH, in which they are independent."
+        , "RXS-M-XS, in which they are independent."
         , ""
         , ""
         , "The same recovered `word`, one draw per row, bit 31 leftmost:"

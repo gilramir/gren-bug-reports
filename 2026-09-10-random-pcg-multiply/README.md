@@ -108,8 +108,11 @@ defines unsigned arithmetic as wrapping modulo 2^32 rather than widening
 (C11 §6.2.5p9).
 
 Gren's `Int` is a JavaScript number, which is a float64. A float64 holds about 15
-to 16 decimal digits — 53 binary digits — and this product needs up to 60. So the
-answer comes back rounded, and rounding keeps the digits at the *top* and drops
+to 16 decimal digits — 53 binary digits — and this product needs up to 59. (It
+would be 60 in C, where the operand is a `uint32_t`; in Gren `Bitwise.xor` hands
+back a *signed* 32-bit integer, so the operand's magnitude stays under 2^31 and
+the product's under 2^59.05. Either way it is far past 53.) So the answer comes
+back rounded, and rounding keeps the digits at the *top* and drops
 the ones at the *bottom*: exactly the ones the algorithm wanted.
 
 It is the pocket-calculator problem. Ask a ten-digit calculator for
@@ -516,6 +519,6 @@ leaves the other standing, which is why they are two reports.
 
 ---
 
-- **Filed as:** not yet filed
+- **Filed as:** [gren-lang/core#146](https://github.com/gren-lang/core/issues/146)
 - **Package:** `gren-lang/core`
 - **Versions:** gren 0.6.6, gren-lang/core 7.4.2, Node.js v22, Linux x86-64

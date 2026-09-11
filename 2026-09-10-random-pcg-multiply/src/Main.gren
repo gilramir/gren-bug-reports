@@ -8,7 +8,7 @@ import Task exposing (Task)
 
 
 {-| `Random.peel` is PCG's RXS-M-XS and multiplies a 32-bit word by `277803737`
-modulo 2^32. In Gren that `*` is a float64 multiply, so the product reaches 2^60
+modulo 2^32. In Gren that `*` is a float64 multiply, so the product reaches 2^59
 and the low bits are gone before `shiftRightZfBy 22` reads them.
 
 `reference.js` beside this file is the same generator transcribed into BigInt,

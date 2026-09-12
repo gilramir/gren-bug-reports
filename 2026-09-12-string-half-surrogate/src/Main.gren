@@ -7,17 +7,11 @@ import Task exposing (Task)
 
 
 {-| `String.contains`, `startsWith`, `endsWith`, `firstIndexOf`, `lastIndexOf`
-and `indices` all match on UTF-16 code units, so half of a surrogate pair is
-found inside the character it is half of.
+and `indices` match UTF-16 code units, so half of a surrogate pair is found
+inside the character it is half of.
 
-`𝄞` is U+1D11E, stored as the two code units 0xD834 and 0xDD1E. Neither unit is
-a character of `"𝄞ab"` — its characters are U+1D11E, `a` and `b` — but
-`String.prototype.indexOf` matches units, so a needle holding one of them is
-reported as present, and the index functions hand back an offset that points
-between the two halves of one codepoint.
-
-`String.sliceUnits` is how the needles are made, so nothing here depends on
-writing an escape for a lone surrogate.
+`𝄞` is U+1D11E, stored as the two code units 0xD834 and 0xDD1E. Neither is a
+character of `"𝄞ab"`, whose characters are U+1D11E, `a` and `b`.
 
 -}
 main : Node.SimpleProgram a
@@ -30,30 +24,39 @@ init env =
     Node.endSimpleProgram (report env)
 
 
+{-| The string being searched: three characters.
+-}
 clef : String
 clef =
     "𝄞ab"
 
 
-{-| The first code unit of `𝄞`, alone: an unpaired lead surrogate.
+{-| The character `𝄞` on its own, for the rows that are already right.
 -}
-leadHalf : String
-leadHalf =
+clefChar : String
+clefChar =
+    "𝄞"
+
+
+{-| The first UTF-16 code unit of `𝄞`, on its own: an unpaired lead surrogate.
+-}
+firstUnit : String
+firstUnit =
     String.sliceUnits 0 1 clef
 
 
 {-| The second: an unpaired trail surrogate.
 -}
-trailHalf : String
-trailHalf =
+secondUnit : String
+secondUnit =
     String.sliceUnits 1 2 clef
 
 
-{-| The same needle, built without touching the `*Units` family at all.
+{-| The same string as `secondUnit`, built without any `*Units` function.
 `Char.fromCode` takes any codepoint, and a surrogate is a codepoint.
 -}
-trailHalfFromCode : String
-trailHalfFromCode =
+fromCode : String
+fromCode =
     String.fromChar (Char.fromCode 0xDD1E)
 
 
@@ -67,6 +70,11 @@ showIndex m =
             "Nothing"
 
 
+showIndices : Array Int -> String
+showIndices xs =
+    "[" ++ String.join "," (Array.map String.fromInt xs) ++ "]"
+
+
 showBool : Bool -> String
 showBool b =
     if b then
@@ -76,26 +84,37 @@ showBool b =
         "False"
 
 
+{-| One table row: the call, what it returns, and what it should return.
+-}
+row : String -> String -> String -> String
+row call result expected =
+    String.padRight 44 ' ' call
+        ++ String.padRight 11 ' ' result
+        ++ expected
+
+
 report : Environment -> Task Never {}
 report env =
-    [ "the string is \"\u{1D11E}ab\": three codepoints (U+1D11E, a, b), four UTF-16 units"
-    , "the needles are its first and second code unit, cut out with sliceUnits"
+    [ "clef        = \"𝄞ab\"  -- three characters: U+1D11E, a, b"
+    , "clefChar    = \"𝄞\""
+    , "firstUnit   = the first UTF-16 code unit of 𝄞, on its own"
+    , "secondUnit  = the second"
+    , "fromCode    = String.fromChar (Char.fromCode 0xDD1E) -- secondUnit again,"
+    , "              built without any *Units function"
     , ""
-    , "contains the trail half          = " ++ showBool (String.contains trailHalf clef) ++ "     (should be False)"
-    , "startsWith the lead half         = " ++ showBool (String.startsWith leadHalf clef) ++ "     (should be False)"
-    , "endsWith the trail half of \"\u{1D11E}\"   = " ++ showBool (String.endsWith trailHalf (String.sliceUnits 0 2 clef)) ++ "     (should be False)"
-    , ""
-    , "firstIndexOf the trail half      = " ++ showIndex (String.firstIndexOf trailHalf clef) ++ "   (should be Nothing)"
-    , "firstIndexOf the lead half       = " ++ showIndex (String.firstIndexOf leadHalf clef) ++ "   (should be Nothing)"
-    , "lastIndexOf the trail half       = " ++ showIndex (String.lastIndexOf trailHalf clef) ++ "   (should be Nothing)"
-    , "indices of the trail half        = " ++ String.join "," (Array.map String.fromInt (String.indices trailHalf clef)) ++ "        (should be empty)"
-    , ""
-    , "the same needle via Char.fromCode 0xDD1E, no sliceUnits:"
-    , "contains it                      = " ++ showBool (String.contains trailHalfFromCode clef) ++ "     (should be False)"
-    , "firstIndexOf it                  = " ++ showIndex (String.firstIndexOf trailHalfFromCode clef) ++ "   (should be Nothing)"
-    , ""
-    , "contains the whole character     = " ++ showBool (String.contains "\u{1D11E}" clef) ++ "     (correct)"
-    , "firstIndexOf the trail half in itself = " ++ showIndex (String.firstIndexOf trailHalf trailHalf) ++ " (correct)"
+    , row "call" "result" "expected"
+    , row "----------------------------------------" "---------" "---------"
+    , row "String.contains secondUnit clef" (showBool (String.contains secondUnit clef)) "False"
+    , row "String.startsWith firstUnit clef" (showBool (String.startsWith firstUnit clef)) "False"
+    , row "String.endsWith secondUnit clefChar" (showBool (String.endsWith secondUnit clefChar)) "False"
+    , row "String.firstIndexOf secondUnit clef" (showIndex (String.firstIndexOf secondUnit clef)) "Nothing"
+    , row "String.firstIndexOf firstUnit clef" (showIndex (String.firstIndexOf firstUnit clef)) "Nothing"
+    , row "String.lastIndexOf secondUnit clef" (showIndex (String.lastIndexOf secondUnit clef)) "Nothing"
+    , row "String.indices secondUnit clef" (showIndices (String.indices secondUnit clef)) "[]"
+    , row "String.contains fromCode clef" (showBool (String.contains fromCode clef)) "False"
+    , row "String.firstIndexOf fromCode clef" (showIndex (String.firstIndexOf fromCode clef)) "Nothing"
+    , row "String.contains clefChar clef" (showBool (String.contains clefChar clef)) "True"
+    , row "String.firstIndexOf secondUnit secondUnit" (showIndex (String.firstIndexOf secondUnit secondUnit)) "Just 0"
     ]
         |> String.join "\n"
         |> (\text -> Stream.writeLineAsBytes text env.stdout)

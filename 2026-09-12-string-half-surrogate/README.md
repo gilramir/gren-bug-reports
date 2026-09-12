@@ -1,4 +1,4 @@
-# `firstIndexOf` can return an index that `slice` cannot use: the match is half a character
+# `firstIndexOf` can return an index that `slice` cannot use: what it found is half a character
 
 `gren` 0.6.6, `gren-lang/core` 7.4.2, `gren-lang/node` 6.1.3, node 22, Linux x86-64.
 
@@ -16,8 +16,8 @@ when String.firstIndexOf sub str is
         ""
 ```
 
-For one kind of match it does not return `sub`, and **no index would have made it
-work**.
+For one kind of occurrence it does not return `sub`, and **no index would have
+made it work**.
 
 `String.sliceUnits` can cut between the two code units that a `𝄞` is stored as,
 which gives a string holding half of one:
@@ -95,15 +95,19 @@ fromCode   = String.fromChar (Char.fromCode 0xDD1E)  -- secondUnit again, built
 | `String.firstIndexOf secondUnit secondUnit` | `Just 0` | `Just 0` |
 
 The last two rows are already right, and they are there to bound the fix. The
-final one is why the rule has to be about the *match* rather than about what is
-being searched for: `secondUnit` is one code point, so a `String` holding just
-that really does contain it, and rejecting every search string with a surrogate
-in it would be wrong.
+final one is why the fix has to ask **where an occurrence falls in the string
+being searched**, and not what is being searched for. `secondUnit` on its own is
+a whole one-character string, so finding it inside itself at index 0 is correct;
+what is wrong in the rows above is *where* it is found, inside a character of
+`clef` rather than between two of them. A rule that rejected any search string
+containing a surrogate would get that last row wrong.
 
 ## The fix
 
-A match counts only if both of its ends fall between characters. Whether a
-UTF-16 offset falls inside a pair is two `charCodeAt`s and no scan:
+An occurrence of `sub` in `str` at UTF-16 offset `i` spans `i` to
+`i + sub.length`, and it counts only if **both** of those offsets fall between
+characters rather than inside a surrogate pair. Two `charCodeAt`s decide each
+one, with no scan:
 
 ```js
 function _String_splitsPair(str, i) {
@@ -119,7 +123,7 @@ function _String_aligned(sub, str, i) {
 }
 ```
 
-`_String_contains` and the three index functions skip a match that is not
+`_String_contains` and the three index functions skip an occurrence that is not
 aligned and search on from `i + 1`; `_String_startsWith` checks the far end
 (offset 0 cannot be inside a pair, but the end of `sub` can) and
 `_String_endsWith` the near one.
@@ -129,5 +133,6 @@ start gives the right answer for every row in the table except one — row 2, wh
 `firstUnit` matches at offset 0, fine at the start and running out in the middle
 of the `𝄞`.
 
-The cost is two `charCodeAt`s per candidate match, and a candidate that fails the
-test essentially never happens, so it is two comparisons on the successful path.
+The cost is two `charCodeAt`s per occurrence found, and an occurrence that fails
+the test essentially never happens, so it is two comparisons on the successful
+path.

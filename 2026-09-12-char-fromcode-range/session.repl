@@ -1,0 +1,5 @@
+Char.fromCode 65
+Char.toCode (Char.fromCode 0xD800)
+Char.fromCode -1
+Char.fromCode 0x110000
+:exit

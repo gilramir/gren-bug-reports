@@ -1,0 +1,51 @@
+module Main exposing (main)
+
+import Init
+import Node exposing (Environment)
+import Stream
+import Task exposing (Task)
+
+
+{-| `Char.fromCode` is documented as returning the replacement character for a
+number outside `0 .. 0x10FFFF`. It throws a `RangeError` instead.
+
+Each line below is written before the next one is built, so the output stops
+where the exception is thrown rather than the program printing nothing at all.
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+say : Environment -> String -> Task Never {}
+say env line =
+    Stream.writeLineAsBytes line env.stdout
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})
+
+
+report : Environment -> Task Never {}
+report env =
+    say env ("fromCode 65      = " ++ String.fromChar (Char.fromCode 65))
+        |> Task.andThen
+            (\_ ->
+                say env
+                    ("fromCode 0xD800  = "
+                        ++ String.fromInt (Char.toCode (Char.fromCode 0xD800))
+                        ++ "   (a lone surrogate, and no error)"
+                    )
+            )
+        |> Task.andThen
+            (\_ ->
+                say env
+                    ("fromCode -1      = "
+                        ++ String.fromChar (Char.fromCode -1)
+                        ++ "   (documented as the replacement character)"
+                    )
+            )
+        |> Task.andThen (\_ -> say env "this line is never reached")

@@ -1,0 +1,72 @@
+module Main exposing (main)
+
+import Init
+import Node exposing (Environment)
+import Stream
+import Task exposing (Task)
+
+
+{-| `String.firstIndexOf`, `lastIndexOf` and `indices` answer in UTF-16 code
+units; every function that takes an index takes a codepoint index.
+
+`𝄞` is U+1D11E: one codepoint, two code units. So an index that comes out of
+`firstIndexOf` cannot be handed to `slice`, and the first two lines below show
+what happens when it is.
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+clef : String
+clef =
+    "𝄞ab"
+
+
+{-| Find a needle, then slice at what was found.
+-}
+needleAt : String -> String
+needleAt needle =
+    when String.firstIndexOf needle clef is
+        Just i ->
+            String.slice i (i + String.count needle) clef
+
+        Nothing ->
+            "not found"
+
+
+showIndex : Maybe Int -> String
+showIndex m =
+    when m is
+        Just n ->
+            String.fromInt n
+
+        Nothing ->
+            "-"
+
+
+report : Environment -> Task Never {}
+report env =
+    [ "the string is \"𝄞ab\": three codepoints, four UTF-16 units"
+    , ""
+    , "count                  = " ++ String.fromInt (String.count clef)
+    , "unitLength             = " ++ String.fromInt (String.unitLength clef)
+    , ""
+    , "firstIndexOf \"a\"       = " ++ showIndex (String.firstIndexOf "a" clef) ++ "   (the codepoint index is 1)"
+    , "lastIndexOf \"b\"        = " ++ showIndex (String.lastIndexOf "b" clef) ++ "   (the codepoint index is 2)"
+    , "indices \"b\"            = " ++ String.join "," (Array.map String.fromInt (String.indices "b" clef)) ++ "   (the codepoint index is 2)"
+    , ""
+    , "slice 1 2              = " ++ String.slice 1 2 clef ++ "   (slice takes codepoints, and is right)"
+    , ""
+    , "slice at firstIndexOf \"a\" = " ++ needleAt "a" ++ "   (should be a)"
+    , "slice at firstIndexOf \"b\" = " ++ needleAt "b" ++ "    (should be b; the index is past the end)"
+    ]
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

@@ -2,6 +2,34 @@
 
 `gren` 0.6.6, `gren-lang/core` 7.4.2, `gren-lang/node` 6.1.3, node 22, Linux x86-64.
 
+## Terms
+
+`String`'s own module documentation defines the two that matter:
+
+> * Code units: represents the smallest primitive value of a string. In Gren,
+>   code units are represented by a 16-bit value. […]
+> * Code points: represents a unicode character. Code points can be represented
+>   by one unit, or a pair of units.
+>
+> Unless otherwise noted, all functions in this module deal with code points.
+
+`count`, `slice`, `takeFirst` and `toArray` work in code points. `unitLength`,
+`getUnit` and `sliceUnits` say so in their names and work in code units. A code
+point at or above U+10000 is stored as two code units — a **surrogate pair** —
+and U+D800–U+DFFF are reserved so the halves of a pair cannot be mistaken for
+anything else.
+
+What that list leaves out is what this report turns on: **a surrogate is itself a
+code point.** U+DD1E is a code point like any other in U+0000–U+10FFFF. It is not
+a *scalar value*, which is Unicode's term for a code point that is not a
+surrogate, but `String` draws that line nowhere — so `String.count` of a string
+holding one is 1, and a program can hold such a string.
+
+One number therefore names two different things: the code point U+DD1E and the
+UTF-16 code unit 0xDD1E. They are numerically equal by design, which is what
+makes the two easy to confuse — and confusing them is the defect below, where
+`indexOf` compares code units and its answer is read as code points.
+
 ## Summary
 
 `contains`, `startsWith`, `endsWith`, `firstIndexOf`, `lastIndexOf` and
@@ -22,17 +50,16 @@ String.contains secondUnit clef             -- True
 String.firstIndexOf secondUnit clef         -- Just 1
 ```
 
-That `Just 1` cannot be used. `String.slice` counts codepoints, so index 1 of
+That `Just 1` cannot be used. `String.slice` counts code points, so index 1 of
 `"𝄞ab"` is `"a"` — and no index would give back what matched, because what
 matched is not a character of the string. That is the difference from #148:
 there the index is in the wrong unit and converting it is the whole fix, and
 here there is no index to convert to.
 
-A surrogate is a codepoint, so anything that turns a codepoint into a `String`
-can build one of these. Checked against 7.4.2: `sliceUnits`, `getUnit`,
-`foldlUnits`, a `\u{DD1E}` escape in a literal, and
-`Char.fromCode 0xDD1E |> String.fromChar` — which is the `fromCode` row in the
-table below, and reaches no `*Units` function at all.
+Anything that turns a code point into a `String` can build one of these. Checked
+against 7.4.2: `sliceUnits`, `getUnit`, `foldlUnits`, a `\u{DD1E}` escape in a
+literal, and `Char.fromCode 0xDD1E |> String.fromChar` — which is the `fromCode`
+row in the table below, and reaches no `*Units` function at all.
 
 ## Reproduction
 
@@ -63,13 +90,13 @@ fromCode   = String.fromChar (Char.fromCode 0xDD1E)  -- secondUnit, built
 
 The last two rows are already right and are there to bound the fix. The second of
 them is why the rule has to be about the *match* and not about the string being
-searched for: an unpaired surrogate is a codepoint — `String.count secondUnit` is
-1 — so a `String` holding one on its own really does contain it, and rejecting
-every search string with a surrogate in it would be wrong.
+searched for: `secondUnit` is one code point, so a `String` holding it really
+does contain it, and rejecting every search string with a surrogate in it would
+be wrong.
 
 ## The fix
 
-A match counts only if it lands on codepoint boundaries at both ends. Whether a
+A match counts only if it lands on code point boundaries at both ends. Whether a
 UTF-16 offset falls between the halves of a pair is two `charCodeAt`s and no
 scan:
 

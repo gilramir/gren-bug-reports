@@ -1,0 +1,101 @@
+module Main exposing (main)
+
+import Init
+import Node exposing (Environment)
+import Stream
+import Task exposing (Task)
+
+
+{-| `String.contains`, `startsWith`, `endsWith`, `firstIndexOf`, `lastIndexOf`
+and `indices` all match on UTF-16 code units, so half of a surrogate pair is
+found inside the character it is half of.
+
+`𝄞` is U+1D11E, stored as the two code units 0xD834 and 0xDD1E. Neither unit is
+a character of `"𝄞ab"` — its characters are U+1D11E, `a` and `b` — but
+`String.prototype.indexOf` matches units, so a needle holding one of them is
+reported as present, and the index functions hand back an offset that points
+between the two halves of one codepoint.
+
+`String.sliceUnits` is how the needles are made, so nothing here depends on
+writing an escape for a lone surrogate.
+
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+clef : String
+clef =
+    "𝄞ab"
+
+
+{-| The first code unit of `𝄞`, alone: an unpaired lead surrogate.
+-}
+leadHalf : String
+leadHalf =
+    String.sliceUnits 0 1 clef
+
+
+{-| The second: an unpaired trail surrogate.
+-}
+trailHalf : String
+trailHalf =
+    String.sliceUnits 1 2 clef
+
+
+showIndex : Maybe Int -> String
+showIndex m =
+    when m is
+        Just n ->
+            "Just " ++ String.fromInt n
+
+        Nothing ->
+            "Nothing"
+
+
+showBool : Bool -> String
+showBool b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+report : Environment -> Task Never {}
+report env =
+    [ "the string is \"𝄞ab\": three codepoints (U+1D11E, a, b), four UTF-16 units"
+    , "the needles are its first and second code unit, cut out with sliceUnits"
+    , ""
+    , "count                            = " ++ String.fromInt (String.count clef)
+    , "unitLength                       = " ++ String.fromInt (String.unitLength clef)
+    , "count of the trail half          = " ++ String.fromInt (String.count trailHalf) ++ "   (one codepoint, on its own)"
+    , ""
+    , "-- half a character is reported as present"
+    , "contains the trail half          = " ++ showBool (String.contains trailHalf clef) ++ "   (should be False)"
+    , "startsWith the lead half         = " ++ showBool (String.startsWith leadHalf clef) ++ "   (should be False)"
+    , "endsWith the trail half of \"𝄞\"   = " ++ showBool (String.endsWith trailHalf (String.sliceUnits 0 2 clef)) ++ "   (should be False)"
+    , ""
+    , "-- and the index functions hand back an offset inside one codepoint"
+    , "firstIndexOf the trail half      = " ++ showIndex (String.firstIndexOf trailHalf clef) ++ "   (should be Nothing)"
+    , "firstIndexOf the lead half       = " ++ showIndex (String.firstIndexOf leadHalf clef) ++ "   (should be Nothing)"
+    , "lastIndexOf the trail half       = " ++ showIndex (String.lastIndexOf trailHalf clef) ++ "   (should be Nothing)"
+    , "indices of the trail half        = " ++ String.join "," (Array.map String.fromInt (String.indices trailHalf clef)) ++ "        (should be empty)"
+    , ""
+    , "-- the controls: a whole character, and ASCII"
+    , "contains the whole character     = " ++ showBool (String.contains "𝄞" clef) ++ "   (correct)"
+    , "firstIndexOf the whole character = " ++ showIndex (String.firstIndexOf "𝄞" clef) ++ " (correct)"
+    , ""
+    , "-- and a half on its own IS a codepoint, found in a string of itself"
+    , "firstIndexOf the trail half in itself = " ++ showIndex (String.firstIndexOf trailHalf trailHalf) ++ " (correct)"
+    ]
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

@@ -1,0 +1,73 @@
+module Main exposing (main)
+
+import Init
+import Node exposing (Environment)
+import Stream
+import Task exposing (Task)
+
+
+{-| `String.words` never produces an empty word — except for one input, where
+every word it produces is empty.
+
+`words " a "` is `[ "a" ]` and not `[ "", "a", "" ]`, and a run of whitespace
+between two words does not produce an empty word between them, so a caller may
+assume a word is non-empty. `words ""` is `[ "" ]`, and so is `words` of any
+string that is nothing but whitespace.
+
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+{-| An array of strings, spelled the way a Gren literal is.
+-}
+show : Array String -> String
+show xs =
+    when xs is
+        [] ->
+            "[]"
+
+        _ ->
+            "[ " ++ String.join ", " (Array.map quote xs) ++ " ]"
+
+
+quote : String -> String
+quote s =
+    "\"" ++ String.replace "\n" "\\n" (String.replace "\t" "\\t" s) ++ "\""
+
+
+{-| One table row: the call, what it returns, and what it should return.
+-}
+row : String -> String -> String -> String
+row call result expected =
+    String.padRight 28 ' ' call
+        ++ String.padRight 18 ' ' result
+        ++ expected
+
+
+report : Environment -> Task Never {}
+report env =
+    [ "String.words drops empty pieces everywhere except for one input."
+    , ""
+    , row "call" "result" "expected"
+    , row "---------------------------" "-----------------" "-----------------"
+    , row "String.words \"\"" (show (String.words "")) "[]"
+    , row "String.words \" \"" (show (String.words " ")) "[]"
+    , row "String.words \"\\n\\t \"" (show (String.words "\n\t ")) "[]"
+    , row "String.words \"a\"" (show (String.words "a")) "[ \"a\" ]"
+    , row "String.words \" a \"" (show (String.words " a ")) "[ \"a\" ]"
+    , row "String.words \"a  b\"" (show (String.words "a  b")) "[ \"a\", \"b\" ]"
+    , ""
+    , "The last three rows are already right, and are what says the function"
+    , "means to drop empty pieces."
+    ]
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

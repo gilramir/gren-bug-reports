@@ -6,12 +6,13 @@ import Stream
 import Task exposing (Task)
 
 
-{-| `String.contains`, `startsWith`, `endsWith`, `firstIndexOf`, `lastIndexOf`
-and `indices` match UTF-16 code units, so half of a surrogate pair is found
-inside the character it is half of.
+{-| `String.firstIndexOf` can return an index that `String.slice` cannot use,
+because the match is half of a character rather than a character of its own.
 
-`𝄞` is U+1D11E, stored as the two code units 0xD834 and 0xDD1E. Neither is a
-character of `"𝄞ab"`, whose characters are U+1D11E, `a` and `b`.
+`𝄞` is U+1D11E, one character, stored on JavaScript as two UTF-16 code units.
+`"𝄞ab"` has three characters — `𝄞`, `a`, `b` — and half of the `𝄞` is not one of
+them, so there is no character position to report for it. `contains`,
+`startsWith` and `endsWith` say it is there too.
 
 -}
 main : Node.SimpleProgram a
@@ -95,24 +96,24 @@ row call result expected =
 
 report : Environment -> Task Never {}
 report env =
-    [ "clef        = \"𝄞ab\"  -- three characters: U+1D11E, a, b"
-    , "clefChar    = \"𝄞\""
-    , "firstUnit   = the first UTF-16 code unit of 𝄞, on its own"
-    , "secondUnit  = the second"
-    , "fromCode    = String.fromChar (Char.fromCode 0xDD1E) -- secondUnit again,"
-    , "              built without any *Units function"
+    [ "clef       = \"\u{1D11E}ab\"  -- three characters: \u{1D11E}, a, b"
+    , "clefChar   = \"\u{1D11E}\""
+    , "firstUnit  = String.sliceUnits 0 1 clef -- the first half of the \u{1D11E}"
+    , "secondUnit = String.sliceUnits 1 2 clef -- the second half"
+    , "fromCode   = String.fromChar (Char.fromCode 0xDD1E) -- secondUnit again,"
+    , "             built without any *Units call"
     , ""
     , row "call" "result" "expected"
     , row "----------------------------------------" "---------" "---------"
-    , row "String.contains secondUnit clef" (showBool (String.contains secondUnit clef)) "False"
-    , row "String.startsWith firstUnit clef" (showBool (String.startsWith firstUnit clef)) "False"
-    , row "String.endsWith secondUnit clefChar" (showBool (String.endsWith secondUnit clefChar)) "False"
     , row "String.firstIndexOf secondUnit clef" (showIndex (String.firstIndexOf secondUnit clef)) "Nothing"
     , row "String.firstIndexOf firstUnit clef" (showIndex (String.firstIndexOf firstUnit clef)) "Nothing"
     , row "String.lastIndexOf secondUnit clef" (showIndex (String.lastIndexOf secondUnit clef)) "Nothing"
     , row "String.indices secondUnit clef" (showIndices (String.indices secondUnit clef)) "[]"
-    , row "String.contains fromCode clef" (showBool (String.contains fromCode clef)) "False"
     , row "String.firstIndexOf fromCode clef" (showIndex (String.firstIndexOf fromCode clef)) "Nothing"
+    , row "String.contains secondUnit clef" (showBool (String.contains secondUnit clef)) "False"
+    , row "String.startsWith firstUnit clef" (showBool (String.startsWith firstUnit clef)) "False"
+    , row "String.endsWith secondUnit clefChar" (showBool (String.endsWith secondUnit clefChar)) "False"
+    , row "String.contains fromCode clef" (showBool (String.contains fromCode clef)) "False"
     , row "String.contains clefChar clef" (showBool (String.contains clefChar clef)) "True"
     , row "String.firstIndexOf secondUnit secondUnit" (showIndex (String.firstIndexOf secondUnit secondUnit)) "Just 0"
     ]

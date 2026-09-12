@@ -1,104 +1,108 @@
-# `contains`, `startsWith`, `endsWith` and the three index functions match half a surrogate pair
+# `firstIndexOf` can return an index that `slice` cannot use: the match is half a character
 
 `gren` 0.6.6, `gren-lang/core` 7.4.2, `gren-lang/node` 6.1.3, node 22, Linux x86-64.
 
-## Terms
-
-`String`'s own module documentation defines the two that matter:
-
-> * Code units: represents the smallest primitive value of a string. In Gren,
->   code units are represented by a 16-bit value. […]
-> * Code points: represents a unicode character. Code points can be represented
->   by one unit, or a pair of units.
->
-> Unless otherwise noted, all functions in this module deal with code points.
-
-`count`, `slice`, `takeFirst` and `toArray` work in code points. `unitLength`,
-`getUnit` and `sliceUnits` say so in their names and work in code units. A code
-point at or above U+10000 is stored as two code units — a **surrogate pair** —
-and U+D800–U+DFFF are reserved so the halves of a pair cannot be mistaken for
-anything else.
-
-What that list leaves out is what this report turns on: **a surrogate is itself a
-code point.** U+DD1E is a code point like any other in U+0000–U+10FFFF. It is not
-a *scalar value*, which is Unicode's term for a code point that is not a
-surrogate, but `String` draws that line nowhere — so `String.count` of a string
-holding one is 1, and a program can hold such a string.
-
-One number therefore names two different things: the code point U+DD1E and the
-UTF-16 code unit 0xDD1E. They are numerically equal by design, which is what
-makes the two easy to confuse — and confusing them is the defect below, where
-`indexOf` compares code units and its answer is read as code points.
-
 ## Summary
 
-`contains`, `startsWith`, `endsWith`, `firstIndexOf`, `lastIndexOf` and
-`indices` are `String.prototype.indexOf` and `lastIndexOf`, which match UTF-16
-code units. So half of a surrogate pair is found inside the character it is half
-of.
-
-`"𝄞ab"` has three characters: U+1D11E, `a`, `b`. On JavaScript U+1D11E is stored
-as the code units 0xD834 and 0xDD1E, and neither of them is one of those three
-characters. But:
+This is the composition everyone writes — find something, then slice at what was
+found:
 
 ```gren
-clef = "𝄞ab"
+when String.firstIndexOf sub str is
+    Just i ->
+        String.slice i (i + String.count sub) str
 
-secondUnit = String.sliceUnits 1 2 clef     -- the second code unit of 𝄞, alone
-
-String.contains secondUnit clef             -- True
-String.firstIndexOf secondUnit clef         -- Just 1
+    Nothing ->
+        ""
 ```
 
-That `Just 1` cannot be used. `String.slice` counts code points, so index 1 of
-`"𝄞ab"` is `"a"` — and no index would give back what matched, because what
-matched is not a character of the string. That is the difference from #148:
-there the index is in the wrong unit and converting it is the whole fix, and
-here there is no index to convert to.
+For one kind of match it does not return `sub`, and **no index would have made it
+work**.
 
-Anything that turns a code point into a `String` can build one of these. Checked
-against 7.4.2: `sliceUnits`, `getUnit`, `foldlUnits`, a `\u{DD1E}` escape in a
-literal, and `Char.fromCode 0xDD1E |> String.fromChar` — which is the `fromCode`
-row in the table below, and reaches no `*Units` function at all.
+`𝄞` is U+1D11E, one character, stored on JavaScript as two UTF-16 code units.
+`String.sliceUnits` can cut between them, which gives a string that is half of a
+`𝄞`:
+
+```gren
+clef       = "𝄞ab"                       -- three characters: 𝄞, a, b
+secondUnit = String.sliceUnits 1 2 clef  -- the second half of the 𝄞
+
+String.firstIndexOf secondUnit clef      -- Just 1
+String.slice 1 2 clef                    -- "a"
+```
+
+`clef`'s characters are `𝄞`, `a` and `b`. `secondUnit` is not one of them, so
+there is no character position for `firstIndexOf` to report: `Just 0` would mean
+the `𝄞` and `Just 1` means the `a`, and neither is what matched. **`Nothing` is
+the only answer that is not wrong.** `lastIndexOf` and `indices` do the same
+thing.
+
+This is not #148. There the index is a real position reported in the wrong unit,
+and converting it is the whole fix. Here there is no position to convert to — so
+whoever fixes #148 has to decide this case anyway, which is the main reason to
+write it down.
+
+`contains`, `startsWith` and `endsWith` say `True` for the same strings. They
+return no index, so a fix for #148 would leave them alone, and they would then
+disagree with the index functions about whether `secondUnit` is in `clef`.
+
+## Terms
+
+From `String`'s own module documentation: a **code unit** is "the smallest
+primitive value of a string", 16 bits in Gren; a **code point** "represents a
+unicode character", and takes one code unit or two. `count`, `slice` and
+`toArray` work in code points, `unitLength` and `sliceUnits` in code units, and
+"unless otherwise noted, all functions in this module deal with code points" —
+none of the six named above is noted.
+
+One thing that documentation leaves out matters here: a surrogate
+(U+D800–U+DFFF, the values reserved for building pairs) is a code point too. So
+`secondUnit` is a perfectly ordinary one-character `String` — `String.count` of
+it is 1 — and it cannot be dismissed as malformed input.
+
+Nor does it have to come from `sliceUnits`. Anything that turns a code point into
+a `String` can build it; checked against 7.4.2: `sliceUnits`, `getUnit`,
+`foldlUnits`, a `\u{DD1E}` escape in a literal, and
+`Char.fromCode 0xDD1E |> String.fromChar`, which is the `fromCode` row in the
+table below.
 
 ## Reproduction
 
 `./run.sh` produces the rows below.
 
 ```gren
-clef       = "𝄞ab"                                   -- U+1D11E, a, b
+clef       = "𝄞ab"                                   -- 𝄞, a, b
 clefChar   = "𝄞"
-firstUnit  = String.sliceUnits 0 1 clef              -- 0xD834, alone
-secondUnit = String.sliceUnits 1 2 clef              -- 0xDD1E, alone
-fromCode   = String.fromChar (Char.fromCode 0xDD1E)  -- secondUnit, built
+firstUnit  = String.sliceUnits 0 1 clef              -- the first half of the 𝄞
+secondUnit = String.sliceUnits 1 2 clef              -- the second half
+fromCode   = String.fromChar (Char.fromCode 0xDD1E)  -- secondUnit again, built
                                                      -- without any *Units call
 ```
 
 | call | result | expected |
 |---|---|---|
-| `String.contains secondUnit clef` | `True` | `False` |
-| `String.startsWith firstUnit clef` | `True` | `False` |
-| `String.endsWith secondUnit clefChar` | `True` | `False` |
 | `String.firstIndexOf secondUnit clef` | `Just 1` | `Nothing` |
 | `String.firstIndexOf firstUnit clef` | `Just 0` | `Nothing` |
 | `String.lastIndexOf secondUnit clef` | `Just 1` | `Nothing` |
 | `String.indices secondUnit clef` | `[1]` | `[]` |
-| `String.contains fromCode clef` | `True` | `False` |
 | `String.firstIndexOf fromCode clef` | `Just 1` | `Nothing` |
+| `String.contains secondUnit clef` | `True` | `False` |
+| `String.startsWith firstUnit clef` | `True` | `False` |
+| `String.endsWith secondUnit clefChar` | `True` | `False` |
+| `String.contains fromCode clef` | `True` | `False` |
 | `String.contains clefChar clef` | `True` | `True` |
 | `String.firstIndexOf secondUnit secondUnit` | `Just 0` | `Just 0` |
 
-The last two rows are already right and are there to bound the fix. The second of
-them is why the rule has to be about the *match* and not about the string being
-searched for: `secondUnit` is one code point, so a `String` holding it really
-does contain it, and rejecting every search string with a surrogate in it would
-be wrong.
+The last two rows are already right, and they are there to bound the fix. The
+final one is why the rule has to be about the *match* rather than about what is
+being searched for: `secondUnit` is one code point, so a `String` holding just
+that really does contain it, and rejecting every search string with a surrogate
+in it would be wrong.
 
 ## The fix
 
-A match counts only if it lands on code point boundaries at both ends. Whether a
-UTF-16 offset falls between the halves of a pair is two `charCodeAt`s and no
-scan:
+A match counts only if both of its ends fall between characters. Whether a
+UTF-16 offset falls inside a pair is two `charCodeAt`s and no scan:
 
 ```js
 function _String_splitsPair(str, i) {
@@ -116,13 +120,13 @@ function _String_aligned(sub, str, i) {
 
 `_String_contains` and the three index functions skip a match that is not
 aligned and search on from `i + 1`; `_String_startsWith` checks the far end
-(offset 0 cannot split a pair, but the end of `sub` can) and `_String_endsWith`
-the near one.
+(offset 0 cannot be inside a pair, but the end of `sub` can) and
+`_String_endsWith` the near one.
 
 **Both ends have to be checked**, which is easy to get wrong: checking only the
-start gives the right answer for every row above except one — row 2, where
-`firstUnit` matches at offset 0, aligned at the start and running out in the
-middle.
+start gives the right answer for every row in the table except one — row 2, where
+`firstUnit` matches at offset 0, fine at the start and running out in the middle
+of the `𝄞`.
 
 The cost is two `charCodeAt`s per candidate match, and a candidate that fails the
 test essentially never happens, so it is two comparisons on the successful path.

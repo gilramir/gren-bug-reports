@@ -10,7 +10,7 @@ code units. So half of a surrogate pair is found inside the character it is half
 of.
 
 `"𝄞ab"` has three characters: U+1D11E, `a`, `b`. On JavaScript U+1D11E is stored
-as the code units 0xD834 and 0xDD1E, and neither of those is one of those
+as the code units 0xD834 and 0xDD1E, and neither of them is one of those three
 characters. But:
 
 ```gren
@@ -22,16 +22,17 @@ String.contains secondUnit clef             -- True
 String.firstIndexOf secondUnit clef         -- Just 1
 ```
 
-The `Just 1` is the part with no way forward for the caller: `String.slice`
-counts codepoints, so index 1 of `"𝄞ab"` is `"a"`, and no index recovers what was
-matched. This is not #148 — there the answer is in the wrong unit and converting
-it is the fix; here there is no right answer to convert to.
+That `Just 1` cannot be used. `String.slice` counts codepoints, so index 1 of
+`"𝄞ab"` is `"a"` — and no index would give back what matched, because what
+matched is not a character of the string. That is the difference from #148:
+there the index is in the wrong unit and converting it is the whole fix, and
+here there is no index to convert to.
 
-`String.sliceUnits` is how `secondUnit` is built above, but that is not what this
-depends on. `Char.fromCode 0xDD1E |> String.fromChar` builds the same string and
-touches no `*Units` function, and so do `getUnit`, `foldlUnits` and a `\u{DD1E}`
-escape in a literal — five routes, all checked against 7.4.2. A surrogate is a
-codepoint, so anything that turns a codepoint into a `String` can produce one.
+A surrogate is a codepoint, so anything that turns a codepoint into a `String`
+can build one of these. Checked against 7.4.2: `sliceUnits`, `getUnit`,
+`foldlUnits`, a `\u{DD1E}` escape in a literal, and
+`Char.fromCode 0xDD1E |> String.fromChar` — which is the `fromCode` row in the
+table below, and reaches no `*Units` function at all.
 
 ## Reproduction
 

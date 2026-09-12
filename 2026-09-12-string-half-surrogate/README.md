@@ -28,8 +28,11 @@ counts codepoints, so index 1 of `"𝄞ab"` is `"a"`, and no index recovers what
 matched. This is not #148 — there the answer is in the wrong unit and converting
 it is the fix; here there is no right answer to convert to.
 
-`String.sliceUnits` is how the needle is made, so nothing depends on being able
-to write an escape for a lone surrogate.
+The needle above is made with `String.sliceUnits`, but that is not what this
+depends on. `Char.fromCode 0xDD1E |> String.fromChar` builds the same string and
+touches no `*Units` function, and so do `getUnit`, `foldlUnits` and a `\u{DD1E}`
+escape in a literal — five routes, all checked against 7.4.2. A surrogate is a
+codepoint, so anything that turns a codepoint into a `String` can produce one.
 
 ## Reproduction
 
@@ -45,6 +48,10 @@ firstIndexOf the trail half      = Just 1   (should be Nothing)
 firstIndexOf the lead half       = Just 0   (should be Nothing)
 lastIndexOf the trail half       = Just 1   (should be Nothing)
 indices of the trail half        = 1        (should be empty)
+
+the same needle via Char.fromCode 0xDD1E, no sliceUnits:
+contains it                      = True     (should be False)
+firstIndexOf it                  = Just 1   (should be Nothing)
 
 contains the whole character     = True     (correct)
 firstIndexOf the trail half in itself = Just 0 (correct)

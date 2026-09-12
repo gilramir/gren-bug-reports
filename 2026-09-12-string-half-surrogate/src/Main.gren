@@ -49,6 +49,14 @@ trailHalf =
     String.sliceUnits 1 2 clef
 
 
+{-| The same needle, built without touching the `*Units` family at all.
+`Char.fromCode` takes any codepoint, and a surrogate is a codepoint.
+-}
+trailHalfFromCode : String
+trailHalfFromCode =
+    String.fromChar (Char.fromCode 0xDD1E)
+
+
 showIndex : Maybe Int -> String
 showIndex m =
     when m is
@@ -81,6 +89,10 @@ report env =
     , "firstIndexOf the lead half       = " ++ showIndex (String.firstIndexOf leadHalf clef) ++ "   (should be Nothing)"
     , "lastIndexOf the trail half       = " ++ showIndex (String.lastIndexOf trailHalf clef) ++ "   (should be Nothing)"
     , "indices of the trail half        = " ++ String.join "," (Array.map String.fromInt (String.indices trailHalf clef)) ++ "        (should be empty)"
+    , ""
+    , "the same needle via Char.fromCode 0xDD1E, no sliceUnits:"
+    , "contains it                      = " ++ showBool (String.contains trailHalfFromCode clef) ++ "     (should be False)"
+    , "firstIndexOf it                  = " ++ showIndex (String.firstIndexOf trailHalfFromCode clef) ++ "   (should be Nothing)"
     , ""
     , "contains the whole character     = " ++ showBool (String.contains "\u{1D11E}" clef) ++ "     (correct)"
     , "firstIndexOf the trail half in itself = " ++ showIndex (String.firstIndexOf trailHalf trailHalf) ++ " (correct)"

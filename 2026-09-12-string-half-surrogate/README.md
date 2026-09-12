@@ -19,13 +19,14 @@ when String.firstIndexOf sub str is
 For one kind of match it does not return `sub`, and **no index would have made it
 work**.
 
-`𝄞` is U+1D11E, one character, stored on JavaScript as two UTF-16 code units.
-`String.sliceUnits` can cut between them, which gives a string that is half of a
-`𝄞`:
+`String.sliceUnits` can cut between the two code units that a `𝄞` is stored as,
+which gives a string holding half of one:
 
 ```gren
 clef       = "𝄞ab"                       -- three characters: 𝄞, a, b
-secondUnit = String.sliceUnits 1 2 clef  -- the second half of the 𝄞
+                                         -- the 𝄞 is U+1D11E, stored as the two
+                                         -- code units 0xD834 and 0xDD1E
+secondUnit = String.sliceUnits 1 2 clef  -- just the 0xDD1E
 
 String.firstIndexOf secondUnit clef      -- Just 1
 String.slice 1 2 clef                    -- "a"
@@ -72,9 +73,9 @@ table below.
 
 ```gren
 clef       = "𝄞ab"                                   -- 𝄞, a, b
-clefChar   = "𝄞"
-firstUnit  = String.sliceUnits 0 1 clef              -- the first half of the 𝄞
-secondUnit = String.sliceUnits 1 2 clef              -- the second half
+clefChar   = "𝄞"                                     -- U+1D11E = 0xD834 0xDD1E
+firstUnit  = String.sliceUnits 0 1 clef              -- 0xD834, the first half
+secondUnit = String.sliceUnits 1 2 clef              -- 0xDD1E, the second half
 fromCode   = String.fromChar (Char.fromCode 0xDD1E)  -- secondUnit again, built
                                                      -- without any *Units call
 ```

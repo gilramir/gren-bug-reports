@@ -97,9 +97,9 @@ row call result expected =
 report : Environment -> Task Never {}
 report env =
     [ "clef       = \"\u{1D11E}ab\"  -- three characters: \u{1D11E}, a, b"
-    , "clefChar   = \"\u{1D11E}\""
-    , "firstUnit  = String.sliceUnits 0 1 clef -- the first half of the \u{1D11E}"
-    , "secondUnit = String.sliceUnits 1 2 clef -- the second half"
+    , "clefChar   = \"\u{1D11E}\"     -- U+1D11E = 0xD834 0xDD1E"
+    , "firstUnit  = String.sliceUnits 0 1 clef -- 0xD834, the first half"
+    , "secondUnit = String.sliceUnits 1 2 clef -- 0xDD1E, the second half"
     , "fromCode   = String.fromChar (Char.fromCode 0xDD1E) -- secondUnit again,"
     , "             built without any *Units call"
     , ""

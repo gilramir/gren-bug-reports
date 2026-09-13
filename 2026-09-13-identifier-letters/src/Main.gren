@@ -1,0 +1,52 @@
+module Main exposing (main)
+
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Variable as Variable
+import Init
+import Node exposing (Environment)
+import Stream
+import String.Parser.Advanced as Parser
+import Task exposing (Task)
+
+
+{-| Does `compiler-common` accept each name as a whole identifier?
+
+`lowerCase` and `upperCase` stop at the first character they do not accept, so
+each is followed by `end`: a name is accepted only if the parser consumed all of
+it. `./run.sh` then asks `gren make` the same question about each name, as a
+top-level value or a type, and prints both columns side by side.
+
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+whole : Parser.Parser Context.Context Variable.Error String -> String -> String
+whole parser name =
+    when Parser.run (parser |> Parser.skip (Parser.end Variable.InvalidCharacter)) Context.empty name is
+        Ok _ ->
+            "accepts"
+
+        Err _ ->
+            "rejects"
+
+
+report : Environment -> Task Never {}
+report env =
+    [ "lower xé " ++ whole Variable.lowerCase "xé"
+    , "lower xǅ " ++ whole Variable.lowerCase "xǅ"
+    , "lower xʰ " ++ whole Variable.lowerCase "xʰ"
+    , "lower x中 " ++ whole Variable.lowerCase "x中"
+    , "upper Éa " ++ whole Variable.upperCase "Éa"
+    , "upper ǅa " ++ whole Variable.upperCase "ǅa"
+    ]
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

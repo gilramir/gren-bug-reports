@@ -1,0 +1,60 @@
+module Main exposing (main)
+
+import Init
+import Node exposing (Environment)
+import Stream
+import String.Parser as P
+import Task exposing (Task)
+
+
+{-| `chompUntilEndOr` reports a column one too small when it runs to the end of
+the input and the text it ran over contains a newline.
+
+Each row runs one parser over a source and then asks `getPosition` where it
+stopped. Every parser here consumes the whole source, so the right answer is the
+position just past its last character.
+
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+positionAfter : P.Parser a -> String -> String
+positionAfter parser src =
+    when P.run (P.succeed identity |> P.skip parser |> P.keep P.getPosition) src is
+        Ok pos ->
+            "row " ++ String.fromInt pos.row ++ ", col " ++ String.fromInt pos.col
+
+        Err _ ->
+            "Err"
+
+
+{-| One table row: the call, what it returns, and what it should return.
+-}
+tableRow : String -> String -> String -> String
+tableRow call result expected =
+    String.padRight 42 ' ' call
+        ++ String.padRight 18 ' ' result
+        ++ expected
+
+
+report : Environment -> Task Never {}
+report env =
+    [ tableRow "parser, then getPosition" "result" "expected"
+    , tableRow "-----------------------------------------" "-----------------" "-----------------"
+    , tableRow "chompUntilEndOr \"X\"   on \"a\\nbc\"" (positionAfter (P.chompUntilEndOr "X") "a\nbc") "row 2, col 3"
+    , tableRow "chompUntilEndOr \"X\"   on \"a\\nbcdef\"" (positionAfter (P.chompUntilEndOr "X") "a\nbcdef") "row 2, col 6"
+    , tableRow "chompUntilEndOr \"X\"   on \"abc\"" (positionAfter (P.chompUntilEndOr "X") "abc") "row 1, col 4"
+    , tableRow "chompWhile (\\_ -> True) on \"a\\nbc\"" (positionAfter (P.chompWhile (\_ -> True)) "a\nbc") "row 2, col 3"
+    , tableRow "chompUntilEndOr \"X\"   on \"a\\nbcX\"" (positionAfter (P.chompUntilEndOr "X") "a\nbcX") "row 2, col 3"
+    ]
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

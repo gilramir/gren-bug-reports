@@ -1,0 +1,62 @@
+module Main exposing (main)
+
+import Init
+import Node exposing (Environment)
+import Stream
+import String.Parser as P
+import Task exposing (Task)
+
+
+{-| The column `getPosition` reports after a character outside the Basic
+Multilingual Plane depends on which parser consumed it.
+
+`😀` is U+1F600: one character, stored as the two UTF-16 code units 0xD83D and
+0xDE00. Every row consumes exactly that one character and then asks
+`getPosition`, so every row should say column 2.
+
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+positionAfter : P.Parser a -> String -> String
+positionAfter parser src =
+    when P.run (P.succeed identity |> P.skip parser |> P.keep P.getPosition) src is
+        Ok pos ->
+            "row " ++ String.fromInt pos.row ++ ", col " ++ String.fromInt pos.col
+
+        Err _ ->
+            "Err"
+
+
+{-| One table row: the call, what it returns, and what it should return.
+-}
+tableRow : String -> String -> String -> String
+tableRow call result expected =
+    String.padRight 46 ' ' call
+        ++ String.padRight 18 ' ' result
+        ++ expected
+
+
+report : Environment -> Task Never {}
+report env =
+    [ tableRow "parser, then getPosition" "result" "expected"
+    , tableRow "---------------------------------------------" "-----------------" "-----------------"
+    , tableRow "chompIf (\\_ -> True)        on \"😀b\"" (positionAfter (P.chompIf (\_ -> True)) "😀b") "row 1, col 2"
+    , tableRow "chompWhile (\\c -> c /= 'b') on \"😀b\"" (positionAfter (P.chompWhile (\c -> c /= 'b')) "😀b") "row 1, col 2"
+    , tableRow "token \"😀\"                  on \"😀b\"" (positionAfter (P.token "😀") "😀b") "row 1, col 2"
+    , tableRow "chompUntil \"b\"              on \"😀b\"" (positionAfter (P.chompUntil "b") "😀b") "row 1, col 2"
+    , tableRow "chompUntilEndOr \"b\"         on \"😀b\"" (positionAfter (P.chompUntilEndOr "b") "😀b") "row 1, col 2"
+    , tableRow "lineComment \"--\"            on \"--😀\\nb\"" (positionAfter (P.lineComment "--") "--😀\nb") "row 1, col 4"
+    , tableRow "token \"\\n😀\"                on \"\\n😀b\"" (positionAfter (P.token "\n😀") "\n😀b") "row 2, col 2"
+    ]
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

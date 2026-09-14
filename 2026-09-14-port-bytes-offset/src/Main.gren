@@ -1,0 +1,104 @@
+port module Main exposing (main)
+
+import Bytes exposing (Bytes)
+import Bytes.Decode as Decode
+import Bytes.Encode as Encode
+import Json.Encode
+import Platform
+import Task exposing (Task)
+
+
+{-| Sends `body` to the host. -}
+port toHost : Bytes -> Cmd msg
+
+
+{-| Receives bytes from the host. -}
+port fromHost : (Bytes -> msg) -> Sub msg
+
+
+{-| The host answers with bytes of its own. -}
+port roundTrip : Bytes -> Task Json.Encode.Value Bytes
+
+
+{-| Tells the host how many bytes arrived, and which they were. -}
+port report : { label : String, bytes : String } -> Cmd msg
+
+
+type Msg
+    = FromHost Bytes
+    | RoundTrip (Result Json.Encode.Value Bytes)
+
+
+{-| A message: a 2-byte header, then a 3-byte body. `[0, 0, 7, 8, 9]` -}
+message : Bytes
+message =
+    Encode.encode (Encode.sequence (Array.map Encode.unsignedInt8 [ 0, 0, 7, 8, 9 ]))
+
+
+{-| The body, `[7, 8, 9]`. `Bytes.length body` is 3. -}
+body : Bytes
+body =
+    Decode.decode (Decode.map2 (\_ b -> b) (Decode.bytes 2) (Decode.bytes 3)) message
+        |> Maybe.withDefault Bytes.empty
+
+
+main : Program Bytes {} Msg
+main =
+    Platform.worker
+        { init =
+            \flags ->
+                { model = {}
+                , command =
+                    Cmd.batch
+                        [ send "flags" flags
+                        , toHost body
+                        , Task.attempt RoundTrip (roundTrip body)
+                        ]
+                }
+        , update =
+            \msg model ->
+                when msg is
+                    FromHost bytes ->
+                        { model = model, command = send "fromHost" bytes }
+
+                    RoundTrip (Ok bytes) ->
+                        { model = model, command = send "roundTrip result" bytes }
+
+                    RoundTrip (Err _) ->
+                        { model = model, command = Cmd.none }
+        , subscriptions = \_ -> fromHost FromHost
+        }
+
+
+send : String -> Bytes -> Cmd msg
+send label bytes =
+    report { label = label, bytes = describe bytes }
+
+
+describe : Bytes -> String
+describe bytes =
+    let
+        ints =
+            Decode.decode
+                (Decode.loop []
+                    (\acc ->
+                        if Array.length acc == Bytes.length bytes then
+                            Decode.succeed (Decode.Done acc)
+
+                        else
+                            Decode.map (\b -> Decode.Loop (Array.pushLast b acc)) Decode.unsignedInt8
+                    )
+                )
+                bytes
+                |> Maybe.withDefault []
+    in
+    String.fromInt (Bytes.length bytes) ++ " bytes " ++ brief ints
+
+
+brief : Array Int -> String
+brief ints =
+    if Array.length ints <= 8 then
+        "[" ++ String.join ", " (Array.map String.fromInt ints) ++ "]"
+
+    else
+        "[" ++ String.join ", " (Array.map String.fromInt (Array.takeFirst 5 ints)) ++ ", ...]"

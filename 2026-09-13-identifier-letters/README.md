@@ -82,18 +82,61 @@ isInner char =
         || isUpperCaseLetter char
 ```
 
-Matching `gren make` means an upper-case first letter is `[\p{Lu}\p{Lt}]` and a
-later character may be any `\p{L}`:
+Matching `gren make` changes two things. An upper-case first letter becomes
+`[\p{Lu}\p{Lt}]`, and a later character may be any `\p{L}`. The lower-case
+first letter stays `\p{Ll}`, which already agrees. So `lowerCaseLetterRegex` is
+unchanged, and `lowerCase` still uses it for a name's first letter. The diff
+against `Compiler/Parse/Variable.gren` in 3.0.0:
 
-```gren
-upperCaseLetterRegex = Regex.fromString "[\\p{Lu}\\p{Lt}]" ...
-letterRegex = Regex.fromString "\\p{L}" ...
-
-isInner char =
-    Char.isAlphaNum char
-        || char == '_'
-        || isLetter char
+```diff
+ lowerCaseLetterRegex : Regex
+ lowerCaseLetterRegex =
+     Regex.fromString "\\p{Ll}"
+         |> Maybe.withDefault Regex.never
+ 
+ 
+ isLowerCaseLetter : Char -> Bool
+ isLowerCaseLetter char =
+     String.fromChar char
+         |> Regex.contains lowerCaseLetterRegex
+ 
+ 
+ upperCaseLetterRegex : Regex
+ upperCaseLetterRegex =
+-    Regex.fromString "\\p{Lu}"
++    Regex.fromString "[\\p{Lu}\\p{Lt}]"
+         |> Maybe.withDefault Regex.never
+ 
+ 
+ isUpperCaseLetter : Char -> Bool
+ isUpperCaseLetter char =
+     String.fromChar char
+         |> Regex.contains upperCaseLetterRegex
+ 
+ 
++letterRegex : Regex
++letterRegex =
++    Regex.fromString "\\p{L}"
++        |> Maybe.withDefault Regex.never
++
++
++isLetter : Char -> Bool
++isLetter char =
++    String.fromChar char
++        |> Regex.contains letterRegex
++
++
+ isInner : Char -> Bool
+ isInner char =
+     Char.isAlphaNum char
+         || char == '_'
+-        || isLowerCaseLetter char
+-        || isUpperCaseLetter char
++        || isLetter char
 ```
+
+`isInner` stops calling the two case functions because `\p{L}` includes both
+`Ll` and `Lu`.
 
 - **Filed as:** not yet filed
 - **Package:** `gren-lang/compiler-common`, `Compiler.Parse.Variable`

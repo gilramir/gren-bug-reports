@@ -17,7 +17,22 @@ stops at the `中` and gives back `"x"`, and the declaration then fails to parse
 Anything built on `compiler-common` — a formatter, a language server — refuses a
 source file that the compiler accepts.
 
-The two parsers disagree about which letters may appear in a name:
+The two parsers disagree about which letters may appear in a name. Both
+decide by a character's Unicode **General Category**, a two-letter code the
+Unicode Character Database gives every character
+([UAX #44, General_Category values](https://www.unicode.org/reports/tr44/#General_Category_Values)).
+Letters fall into five categories:
+
+| category | meaning | example |
+|---|---|---|
+| `Lu` | uppercase letter | `A`, `É` |
+| `Ll` | lowercase letter | `a`, `é` |
+| `Lt` | titlecase letter: a single character written as two letters, in the form that starts a capitalized word | `ǅ` (U+01C5), between `Ǆ` and `ǆ` |
+| `Lm` | modifier letter | `ʰ` (U+02B0) |
+| `Lo` | other letter, with no case | `中` (U+4E2D), `א`, `ก` |
+
+In a regular expression, `\p{Ll}` matches one character of category `Ll`, and
+`\p{L}` matches any of the five. What each parser accepts:
 
 | | `gren make` | `compiler-common` |
 |---|---|---|

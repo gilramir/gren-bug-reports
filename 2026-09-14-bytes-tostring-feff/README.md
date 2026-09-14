@@ -29,8 +29,10 @@ function _Bytes_toString(bytes) {
   var decoder = new TextDecoder("utf-8", { fatal: true });
 ```
 
-The WHATWG `TextDecoder` has an `ignoreBOM` option, default `false`, and with
-it `false` the decoder treats `EF BB BF` at the start of its input as a
+`TextDecoder`, which the [WHATWG Encoding Standard](https://encoding.spec.whatwg.org/)
+defines, has an
+[`ignoreBOM`](https://encoding.spec.whatwg.org/#dom-textdecoderoptions-ignorebom)
+option, default `false`, and with it `false` the decoder treats `EF BB BF` at the start of its input as a
 byte-order mark and removes it. Only the first one is removed, which is why a
 second U+FEFF, or one after another character, survives.
 
@@ -74,7 +76,7 @@ a mark is something the caller asks for.
 | `new TextDecoder("utf-8", { ignoreBOM: true })` | `U+FEFF U+0061` |
 | `new TextDecoder("utf-8")`, what `Bytes.toString` uses | `U+0061` |
 
-`TextDecoder`'s default comes from the WHATWG Encoding Standard, which decodes
+`TextDecoder`'s default comes from the Encoding Standard, which decodes
 whole web resources, where a leading mark is expected. That is the same job
 `Stream.textDecoder` does, and not the job `Bytes.toString` does.
 

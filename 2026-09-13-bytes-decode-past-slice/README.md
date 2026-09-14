@@ -17,18 +17,20 @@ firstBody =
 `Bytes.length firstBody` is `3`. A decoder run over `firstBody` should see those
 three bytes and nothing else. `Decode.bytes` sees the rest of `buffer`:
 
-```
-decoding the 3-byte body [10, 20, 30]   result                        expected
-bytes 3                                 Just [10, 20, 30]             Just [10, 20, 30]
-bytes 4                                 Just [10, 20, 30, 2]          Nothing
-bytes 5                                 Just [10, 20, 30, 2, 40]      Nothing
-unsignedInt8, four times                Nothing                       Nothing
-string 4                                Just [10, 20, 30, 2]          Nothing
-```
+| call | result | expected |
+|---|---|---|
+| `Decode.decode (Decode.bytes 3) firstBody` | `Just [10, 20, 30]` | `Just [10, 20, 30]` |
+| `Decode.decode (Decode.bytes 4) firstBody` | **`Just [10, 20, 30, 2]`** | `Nothing` |
+| `Decode.decode (Decode.bytes 5) firstBody` | **`Just [10, 20, 30, 2, 40]`** | `Nothing` |
+| `Decode.decode (Decode.string 4) firstBody` | **`Just "\u{A}\u{14}\u{1E}\u{2}"`** | `Nothing` |
+| four `Decode.unsignedInt8` in a row (`Decode.map4`), over `firstBody` | `Nothing` | `Nothing` |
 
-Asking for four bytes of a three-byte body returns the next message's length
-byte as a fourth byte. `unsignedInt8` gets this right, and `string`, which is
-built on `bytes`, gets it wrong.
+`Decode.bytes 4` succeeds on the three-byte body. Its fourth byte is `2`, the
+length byte of the next message in `buffer`, and `Decode.bytes 5` reaches `40`,
+that message's first byte. `Decode.string 4` is built on `Decode.bytes`, so it
+succeeds too, with the same four bytes read as characters. The last row is the
+control. Reading those four bytes one at a time with `Decode.unsignedInt8`
+fails, as it should.
 
 A `Bytes` is a `DataView` onto a larger `ArrayBuffer`, and `Decode.bytes` returns
 a view onto the same buffer rather than a copy. `_Bytes_read_bytes` makes that
@@ -61,7 +63,18 @@ took 10.6 s. With the fix below, the same program made 3,841 calls and took
 
 ## Reproduction
 
-`./run.sh` builds `src/Main.gren` and prints the table above.
+`./run.sh` builds `src/Main.gren` and runs it:
+
+```
+Each row is Decode.decode <decoder> firstBody, and firstBody is [10, 20, 30].
+
+decoder                             result                          expected
+Decode.bytes 3                      Just [10, 20, 30]               Just [10, 20, 30]
+Decode.bytes 4                      Just [10, 20, 30, 2]            Nothing
+Decode.bytes 5                      Just [10, 20, 30, 2, 40]        Nothing
+Decode.string 4                     Just "\u{A}\u{14}\u{1E}\u{2}"   Nothing
+four Decode.unsignedInt8 (control)  Nothing                         Nothing
+```
 
 ## The fix
 

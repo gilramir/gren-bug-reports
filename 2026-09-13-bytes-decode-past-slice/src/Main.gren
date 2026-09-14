@@ -4,6 +4,7 @@ import Bytes exposing (Bytes)
 import Bytes.Decode as Decode
 import Bytes.Encode as Encode
 import Init
+import Math
 import Node
 import Stream.Log
 import Task
@@ -31,14 +32,38 @@ firstBody =
         |> Maybe.withDefault Bytes.empty
 
 
-show : Maybe Bytes -> String
-show result =
+showBytes : Maybe Bytes -> String
+showBytes result =
     when result is
         Nothing ->
             "Nothing"
 
         Just bytes ->
             "Just [" ++ String.join ", " (Array.map String.fromInt (toInts bytes)) ++ "]"
+
+
+{-| A decoded string, every character written as an escape, since these are control characters. -}
+showString : Maybe String -> String
+showString result =
+    when result is
+        Nothing ->
+            "Nothing"
+
+        Just string ->
+            "Just \"" ++ String.foldl (\char acc -> acc ++ "\\u{" ++ hex (Char.toCode char) ++ "}") "" string ++ "\""
+
+
+hex : Int -> String
+hex n =
+    let
+        digit d =
+            String.slice d (d + 1) "0123456789ABCDEF"
+    in
+    if n < 16 then
+        digit n
+
+    else
+        hex (n // 16) ++ digit (Math.modBy 16 n)
 
 
 toInts : Bytes -> Array Int
@@ -48,8 +73,8 @@ toInts bytes =
 
 
 row : String -> String -> String -> String
-row call result expected =
-    String.padRight 40 ' ' call ++ String.padRight 30 ' ' result ++ expected
+row decoder result expected =
+    String.padRight 36 ' ' decoder ++ String.padRight 32 ' ' result ++ expected
 
 
 init : Node.Environment -> Init.Task { model : {}, command : Cmd {} }
@@ -57,12 +82,14 @@ init env =
     Node.startProgram
         { model = {}
         , command =
-            [ row "decoding the 3-byte body [10, 20, 30]" "result" "expected"
-            , row "bytes 3" (show (Decode.decode (Decode.bytes 3) firstBody)) "Just [10, 20, 30]"
-            , row "bytes 4" (show (Decode.decode (Decode.bytes 4) firstBody)) "Nothing"
-            , row "bytes 5" (show (Decode.decode (Decode.bytes 5) firstBody)) "Nothing"
-            , row "unsignedInt8, four times" (show (Decode.decode (Decode.map4 (\_ _ _ _ -> Bytes.empty) Decode.unsignedInt8 Decode.unsignedInt8 Decode.unsignedInt8 Decode.unsignedInt8) firstBody)) "Nothing"
-            , row "string 4" (show (Decode.decode (Decode.string 4) firstBody |> Maybe.map Bytes.fromString)) "Nothing"
+            [ "Each row is Decode.decode <decoder> firstBody, and firstBody is [10, 20, 30]."
+            , ""
+            , row "decoder" "result" "expected"
+            , row "Decode.bytes 3" (showBytes (Decode.decode (Decode.bytes 3) firstBody)) "Just [10, 20, 30]"
+            , row "Decode.bytes 4" (showBytes (Decode.decode (Decode.bytes 4) firstBody)) "Nothing"
+            , row "Decode.bytes 5" (showBytes (Decode.decode (Decode.bytes 5) firstBody)) "Nothing"
+            , row "Decode.string 4" (showString (Decode.decode (Decode.string 4) firstBody)) "Nothing"
+            , row "four Decode.unsignedInt8 (control)" (showBytes (Decode.decode (Decode.map4 (\_ _ _ _ -> Bytes.empty) Decode.unsignedInt8 Decode.unsignedInt8 Decode.unsignedInt8 Decode.unsignedInt8) firstBody)) "Nothing"
             ]
                 |> Array.map (Stream.Log.line env.stdout)
                 |> Task.sequence

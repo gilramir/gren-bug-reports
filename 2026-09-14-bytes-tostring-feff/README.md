@@ -34,6 +34,50 @@ it `false` the decoder treats `EF BB BF` at the start of its input as a
 byte-order mark and removes it. Only the first one is removed, which is why a
 second U+FEFF, or one after another character, survives.
 
+## Why `Bytes.toString` has to keep it
+
+A byte-order mark belongs to the start of a text file or a text stream, and a
+library reading one should remove it. `core` already has that library:
+`Stream.textDecoder` is a `TextDecoderStream`, and it removes `EF BB BF` at the
+start of the stream and keeps a U+FEFF anywhere after it. Fixing
+`Bytes.toString` does not change that.
+
+`Bytes.toString` sits below that layer, and it cannot tell whether its bytes
+are the start of a file. Most of the time they are not:
+
+- **A string field inside a binary message.** `Bytes.Decode.string n` reads a
+  length-prefixed value out of the middle of a larger structure, such as
+  protobuf, MessagePack or a format of the program's own. Its first byte starts
+  a value, not a file, so U+FEFF there is the value's first character.
+  Removing it returns different data than was encoded.
+- **A round trip.** `Bytes.fromString` writes the characters it is given. It
+  never adds a byte-order mark and never removes a U+FEFF, and `toString` is
+  its inverse only if it does the same. Anything that re-encodes and compares
+  sees the string change, and that includes a canonical-form check, a hash, a
+  signature and a cache key.
+- **Only one way can be undone.** If `toString` keeps the character, a program
+  reading a file that may carry a mark can drop a leading `'\u{FEFF}'` in one
+  line. If `toString` removes it, the character is gone and nothing can tell it
+  was there. The loss is one character, at offset 0 only, with no error.
+
+Other languages decode UTF-8 the same way: the character is kept, and removing
+a mark is something the caller asks for.
+
+| decoding `EF BB BF 61` | result |
+|---|---|
+| Python 3.12 `bytes.decode("utf-8")` | `U+FEFF U+0061` |
+| Python 3.12 `bytes.decode("utf-8-sig")`, which asks for removal | `U+0061` |
+| Go 1.25 `string(b)` | `U+FEFF U+0061` |
+| Java 21 `new String(b, StandardCharsets.UTF_8)` | `U+FEFF U+0061` |
+| Node 22 `Buffer.toString("utf8")` | `U+FEFF U+0061` |
+| Node 22 `fs.readFileSync(path, "utf8")` | `U+FEFF U+0061` |
+| `new TextDecoder("utf-8", { ignoreBOM: true })` | `U+FEFF U+0061` |
+| `new TextDecoder("utf-8")`, what `Bytes.toString` uses | `U+0061` |
+
+`TextDecoder`'s default comes from the WHATWG Encoding Standard, which decodes
+whole web resources, where a leading mark is expected. That is the same job
+`Stream.textDecoder` does, and not the job `Bytes.toString` does.
+
 ## Reproduction
 
 `./run.sh` builds the program and runs it:
@@ -58,6 +102,5 @@ var decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 ```
 
 `Bytes.toString` then gives back exactly the characters the bytes encode, which
-is what `Bytes.fromString` wrote. A program that wants a byte-order mark
-stripped from a file can still drop a leading `'\u{FEFF}'` itself; a program
-that needs the character has no way to get it back once it is gone.
+is what `Bytes.fromString` wrote. Text read through `Stream.textDecoder` still
+has its mark removed.

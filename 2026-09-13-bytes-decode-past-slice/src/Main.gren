@@ -1,0 +1,70 @@
+module Main exposing (main)
+
+import Bytes exposing (Bytes)
+import Bytes.Decode as Decode
+import Bytes.Encode as Encode
+import Init
+import Node
+import Stream.Log
+import Task
+
+
+main : Node.Program {} {}
+main =
+    Node.defineProgram
+        { init = init
+        , update = \_ model -> { model = model, command = Cmd.none }
+        , subscriptions = \_ -> Sub.none
+        }
+
+
+{-| A message, then a second one right after it: `[3, 10, 20, 30, 2, 40, 50]`. -}
+buffer : Bytes
+buffer =
+    Encode.encode (Encode.sequence (Array.map Encode.unsignedInt8 [ 3, 10, 20, 30, 2, 40, 50 ]))
+
+
+{-| The first message's body, `[10, 20, 30]`: a length byte, then that many bytes. -}
+firstBody : Bytes
+firstBody =
+    Decode.decode (Decode.unsignedInt8 |> Decode.andThen Decode.bytes) buffer
+        |> Maybe.withDefault Bytes.empty
+
+
+show : Maybe Bytes -> String
+show result =
+    when result is
+        Nothing ->
+            "Nothing"
+
+        Just bytes ->
+            "Just [" ++ String.join ", " (Array.map String.fromInt (toInts bytes)) ++ "]"
+
+
+toInts : Bytes -> Array Int
+toInts bytes =
+    Decode.decode (Decode.loop [] (\acc -> if Array.length acc == Bytes.length bytes then Decode.succeed (Decode.Done acc) else Decode.map (\b -> Decode.Loop (Array.pushLast b acc)) Decode.unsignedInt8)) bytes
+        |> Maybe.withDefault []
+
+
+row : String -> String -> String -> String
+row call result expected =
+    String.padRight 40 ' ' call ++ String.padRight 30 ' ' result ++ expected
+
+
+init : Node.Environment -> Init.Task { model : {}, command : Cmd {} }
+init env =
+    Node.startProgram
+        { model = {}
+        , command =
+            [ row "decoding the 3-byte body [10, 20, 30]" "result" "expected"
+            , row "bytes 3" (show (Decode.decode (Decode.bytes 3) firstBody)) "Just [10, 20, 30]"
+            , row "bytes 4" (show (Decode.decode (Decode.bytes 4) firstBody)) "Nothing"
+            , row "bytes 5" (show (Decode.decode (Decode.bytes 5) firstBody)) "Nothing"
+            , row "unsignedInt8, four times" (show (Decode.decode (Decode.map4 (\_ _ _ _ -> Bytes.empty) Decode.unsignedInt8 Decode.unsignedInt8 Decode.unsignedInt8 Decode.unsignedInt8) firstBody)) "Nothing"
+            , row "string 4" (show (Decode.decode (Decode.string 4) firstBody |> Maybe.map Bytes.fromString)) "Nothing"
+            ]
+                |> Array.map (Stream.Log.line env.stdout)
+                |> Task.sequence
+                |> Task.execute
+        }

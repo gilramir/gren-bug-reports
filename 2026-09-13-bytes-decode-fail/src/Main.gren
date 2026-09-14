@@ -1,0 +1,91 @@
+module Main exposing (main)
+
+import Bytes
+import Bytes.Decode as Decode
+import Bytes.Encode as Encode
+import Init
+import Node
+import Stream.Log
+import Task
+
+
+main : Node.Program {} {}
+main =
+    Node.defineProgram
+        { init = init
+        , update = \_ model -> { model = model, command = Cmd.none }
+        , subscriptions = \_ -> Sub.none
+        }
+
+
+{-| The shape of the example in `Bytes.Decode.fail`'s own documentation: a tag
+byte picks a decoder, and a tag nobody knows is `fail`.
+-}
+distance : Decode.Decoder String
+distance =
+    Decode.unsignedInt8
+        |> Decode.andThen
+            (\tag ->
+                when tag is
+                    0 ->
+                        Decode.map (\_ -> "yards") (Decode.float32 Bytes.BE)
+
+                    1 ->
+                        Decode.map (\_ -> "meters") (Decode.float32 Bytes.BE)
+
+                    _ ->
+                        Decode.fail
+            )
+
+
+show : Maybe String -> String
+show result =
+    when result is
+        Just s ->
+            "Just " ++ s
+
+        Nothing ->
+            "Nothing"
+
+
+{-| A tag byte, then a float if `withFloat`. -}
+input : Int -> Bool -> Bytes.Bytes
+input tag withFloat =
+    Encode.encode
+        (Encode.sequence
+            (if withFloat then
+                [ Encode.unsignedInt8 tag, Encode.float32 Bytes.BE 1.5 ]
+
+             else
+                [ Encode.unsignedInt8 tag ]
+            )
+        )
+
+
+init : Node.Environment -> Init.Task { model : {}, command : Cmd {} }
+init env =
+    Node.startProgram
+        { model = {}
+        , command =
+            if Array.get 2 env.args == Just "direct" then
+                -- The same decode, outside any task.
+                Stream.Log.line env.stdout ("unknown tag:      " ++ show (Decode.decode distance (input 7 True)))
+                    |> Task.execute
+
+            else
+                [ { label = "known tag:        ", tag = 0, withFloat = True }
+                , { label = "input too short:  ", tag = 0, withFloat = False }
+                , { label = "unknown tag:      ", tag = 7, withFloat = True }
+                ]
+                    |> Array.map
+                        (\case ->
+                            Task.succeed {}
+                                |> Task.andThen
+                                    (\_ ->
+                                        Stream.Log.line env.stdout
+                                            (case.label ++ show (Decode.decode distance (input case.tag case.withFloat)))
+                                    )
+                        )
+                    |> Task.sequence
+                    |> Task.execute
+        }

@@ -138,6 +138,6 @@ against `Compiler/Parse/Variable.gren` in 3.0.0:
 `isInner` stops calling the two case functions because `\p{L}` includes both
 `Ll` and `Lu`.
 
-- **Filed as:** not yet filed
+- **Filed as:** https://github.com/gren-lang/compiler-common/issues/38
 - **Package:** `gren-lang/compiler-common`, `Compiler.Parse.Variable`
 - **Versions:** `gren` 0.6.6, `gren-lang/compiler-common` 3.0.0

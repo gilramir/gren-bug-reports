@@ -1,0 +1,59 @@
+module Main exposing (main)
+
+import Bytes
+import Bytes.Decode as Decode
+import Bytes.Encode as Encode
+import Init
+import Node
+import Stream.Log
+import Task
+
+
+main : Node.Program {} {}
+main =
+    Node.defineProgram
+        { init = init
+        , update = \_ model -> { model = model, command = Cmd.none }
+        , subscriptions = \_ -> Sub.none
+        }
+
+
+input : Array Int -> Bytes.Bytes
+input ints =
+    Encode.encode (Encode.sequence (Array.map Encode.unsignedInt8 ints))
+
+
+{-| The code points of a decoded string, so that a U+FEFF can be seen. -}
+codepoints : Maybe String -> String
+codepoints result =
+    when result is
+        Just s ->
+            "Just [" ++ String.join ", " (Array.map (\c -> String.fromInt (Char.toCode c)) (String.toArray s)) ++ "]"
+
+        Nothing ->
+            "Nothing"
+
+
+init : Node.Environment -> Init.Task { model : {}, command : Cmd {} }
+init env =
+    Node.startProgram
+        { model = {}
+        , command =
+            [ "Bytes.fromString \"\\u{FEFF}a\" has length " ++ String.fromInt (Bytes.length (Bytes.fromString "\u{FEFF}a"))
+            , "Bytes.toString (Bytes.fromString \"\\u{FEFF}a\") == Just \"\\u{FEFF}a\": "
+                ++ (if Bytes.toString (Bytes.fromString "\u{FEFF}a") == Just "\u{FEFF}a" then
+                        "True"
+
+                    else
+                        "False"
+                   )
+            , "toString [EF BB BF 61]:          " ++ codepoints (Bytes.toString (input [ 0xEF, 0xBB, 0xBF, 0x61 ]))
+            , "toString [EF BB BF]:             " ++ codepoints (Bytes.toString (input [ 0xEF, 0xBB, 0xBF ]))
+            , "toString [EF BB BF EF BB BF]:    " ++ codepoints (Bytes.toString (input [ 0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF ]))
+            , "toString [61 EF BB BF]:          " ++ codepoints (Bytes.toString (input [ 0x61, 0xEF, 0xBB, 0xBF ]))
+            , "Decode.string 4 [EF BB BF 61]:   " ++ codepoints (Decode.decode (Decode.string 4) (input [ 0xEF, 0xBB, 0xBF, 0x61 ]))
+            ]
+                |> Array.map (Stream.Log.line env.stdout)
+                |> Task.sequence
+                |> Task.execute
+        }

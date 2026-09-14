@@ -40,6 +40,9 @@ checkedValue = new DataView(value.buffer.slice());              // task port res
 `ArrayBuffer.prototype.slice()` with no arguments copies the entire buffer, so
 the window is lost and every byte around it comes along.
 
+This is the mistake [core#137](https://github.com/gren-lang/core/issues/137)
+reports in `Bytes.flatten`, in a different file; fixing either leaves the other.
+
 ## Reproduction
 
 `./run.sh` builds the program and runs `host.js`, which sends `[4, 5]` into the

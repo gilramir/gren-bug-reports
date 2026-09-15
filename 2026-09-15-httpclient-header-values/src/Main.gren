@@ -1,0 +1,37 @@
+module Main exposing (main)
+
+import Dict
+import HttpClient
+import Init
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Init.await HttpClient.initialize <| \http ->
+            let
+                say text =
+                    Stream.writeLineAsBytes text env.stdout
+                        |> Task.map (\_ -> {})
+                        |> Task.onError (\_ -> Task.succeed {})
+            in
+            Node.endSimpleProgram
+                (HttpClient.get "data:text/plain,x"
+                    |> HttpClient.send http
+                    |> Task.onError (\_ -> Task.succeed { statusCode = 0, statusText = "", headers = Dict.empty, data = {} })
+                    |> Task.andThen
+                        (\response ->
+                            let
+                                values =
+                                    Dict.get "content-type" response.headers |> Maybe.withDefault []
+                            in
+                            say ("Array.length values = " ++ String.fromInt (Array.length values))
+                                |> Task.andThen (\_ -> say ("Array.first values = " ++ Maybe.withDefault "Nothing" (Array.first values)))
+                                |> Task.andThen (\_ -> say "String.join \", \" values follows")
+                                |> Task.andThen (\_ -> say ("String.join \", \" values = " ++ String.join ", " values))
+                                |> Task.andThen (\_ -> say "done")
+                        )
+                )

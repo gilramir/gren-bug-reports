@@ -1,0 +1,27 @@
+module Main exposing (main)
+
+import FileSystem
+import FileSystem.Path as Path
+import Init
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Init.await FileSystem.initialize <| \fs ->
+            let
+                say text =
+                    Stream.writeLineAsBytes text env.stdout
+                        |> Task.map (\_ -> {})
+                        |> Task.onError (\_ -> Task.succeed {})
+            in
+            Node.endSimpleProgram
+                (say "making a temporary directory under a prefix that does not exist"
+                    |> Task.andThen (\_ -> FileSystem.makeTempDirectory fs "no-such-directory/x")
+                    |> Task.map (\path -> "made " ++ Path.toPosixString path)
+                    |> Task.onError (\e -> Task.succeed ("failed: " ++ FileSystem.errorCode e))
+                    |> Task.andThen say
+                )

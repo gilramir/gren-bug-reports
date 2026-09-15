@@ -1,0 +1,31 @@
+module Main exposing (main)
+
+import FileSystem
+import FileSystem.FileHandle as FileHandle
+import FileSystem.Path as Path
+import Init
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Init.await FileSystem.initialize <| \fs ->
+            let
+                say text =
+                    Stream.writeLineAsBytes text env.stdout
+                        |> Task.map (\_ -> {})
+                        |> Task.onError (\_ -> Task.succeed {})
+            in
+            Node.endSimpleProgram
+                (FileHandle.openForRead fs (Path.fromPosixString "gren.json")
+                    |> Task.andThen FileHandle.metadata
+                    -- The annotation says this is a ReadableFileHandle, so
+                    -- this type-checks, and reading from it is allowed.
+                    |> Task.andThen FileHandle.read
+                    |> Task.map (\_ -> "read from the metadata's handle")
+                    |> Task.onError (\e -> Task.succeed ("failed: " ++ FileSystem.errorToString e))
+                    |> Task.andThen say
+                )

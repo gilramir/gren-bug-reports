@@ -1,0 +1,69 @@
+module Main exposing (main)
+
+import Json.Decode as Decode
+import Node
+import Stream
+import Task
+
+
+show : (a -> String) -> Result Decode.Error a -> String
+show f result =
+    when result is
+        Ok v ->
+            "Ok " ++ f v
+
+        Err _ ->
+            "Err"
+
+
+showMaybe : Maybe Int -> String
+showMaybe m =
+    when m is
+        Just n ->
+            "Just " ++ String.fromInt n
+
+        Nothing ->
+            "Nothing"
+
+
+rows : Array { call : String, result : String, expected : String }
+rows =
+    [ { call = "decodeString int \"12\""
+      , result = show String.fromInt (Decode.decodeString Decode.int "12")
+      , expected = "Ok 12"
+      }
+    , { call = "decodeString int \"1e400\""
+      , result = show String.fromInt (Decode.decodeString Decode.int "1e400")
+      , expected = "Err"
+      }
+    , { call = "decodeString int \"-1e400\""
+      , result = show String.fromInt (Decode.decodeString Decode.int "-1e400")
+      , expected = "Err"
+      }
+    , { call = "decodeString int \"1e400\" |> map (String.fromInt >> String.toInt)"
+      , result = show showMaybe (Decode.decodeString Decode.int "1e400" |> Result.map (String.fromInt >> String.toInt))
+      , expected = "Err"
+      }
+    , { call = "decodeString int \"1e400\" |> map (\\n -> n - n)"
+      , result = show String.fromInt (Decode.decodeString Decode.int "1e400" |> Result.map (\n -> n - n))
+      , expected = "Err"
+      }
+    ]
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram
+        (\env ->
+            Node.endSimpleProgram
+                (Stream.writeLineAsBytes
+                    (String.join "\n"
+                        ([ "| call | result | expected |", "|---|---|---|" ]
+                            ++ Array.map (\r -> "| `" ++ String.replace "|" "\\|" r.call ++ "` | " ++ r.result ++ " | " ++ r.expected ++ " |") rows
+                        )
+                    )
+                    env.stdout
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+                )
+        )

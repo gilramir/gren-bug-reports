@@ -1,0 +1,71 @@
+module Main exposing (main)
+
+import Init
+import Math
+import Node
+import Stream
+import Task
+
+
+s : String
+s =
+    -- "a", U+1F600, "b": three characters, and U+1F600 is two UTF-16 code units
+    "a😀b"
+
+
+hex : String -> String
+hex str =
+    String.foldl (\c acc -> Array.pushLast (hexOf (Char.toCode c)) acc) [] str
+        |> String.join ", "
+        |> (\codes -> "[ " ++ codes ++ " ]")
+
+
+hexOf : Int -> String
+hexOf n =
+    let
+        digits k =
+            if k < 16 then
+                String.slice k (k + 1) "0123456789ABCDEF"
+
+            else
+                digits (k // 16) ++ String.slice (Math.modBy 16 k) (Math.modBy 16 k + 1) "0123456789ABCDEF"
+    in
+    "0x" ++ digits n
+
+
+rows : Array { call : String, result : String, expected : String }
+rows =
+    [ { call = "String.count s"
+      , result = String.fromInt (String.count s)
+      , expected = "3"
+      }
+    , { call = "Array.length (String.split \"\" s)"
+      , result = String.fromInt (Array.length (String.split "" s))
+      , expected = "3"
+      }
+    , { call = "String.split \"\" s |> Array.map String.count"
+      , result = "[ " ++ String.join ", " (Array.map (\p -> String.fromInt (String.count p)) (String.split "" s)) ++ " ]"
+      , expected = "[ 1, 1, 1 ]"
+      }
+    , { call = "code points of (String.split \"\" s |> Array.reverse |> String.join \"\")"
+      , result = hex (String.split "" s |> Array.reverse |> String.join "")
+      , expected = "[ 0x62, 0x1F600, 0x61 ]"
+      }
+    ]
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram
+        (\env ->
+            Node.endSimpleProgram
+                (rows
+                    |> Array.map (\r -> "| `" ++ String.replace "|" "\\|" r.call ++ "` | " ++ r.result ++ " | " ++ r.expected ++ " |")
+                    |> Array.pushFirst "|---|---|---|"
+                    |> Array.pushFirst "| call | result | expected |"
+                    |> String.join "\n"
+                    |> (\text -> Stream.writeLineAsBytes text env.stdout)
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+                )
+        )

@@ -1,0 +1,51 @@
+module Main exposing (main)
+
+import Bytes
+import ChildProcess exposing (FailedRun(..))
+import Init
+import Node
+import Stream
+import Task exposing (Task)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Init.await ChildProcess.initialize <| \permission ->
+            let
+                say text =
+                    Stream.writeLineAsBytes text env.stdout
+                        |> Task.map (\_ -> {})
+                        |> Task.onError (\_ -> Task.succeed {})
+
+                noShell =
+                    ChildProcess.defaultRunOptions
+
+                row name program arguments options =
+                    ChildProcess.run permission program arguments { options | shell = ChildProcess.NoShell }
+                        |> Task.map (\_ -> name ++ ": succeeded")
+                        |> Task.onError
+                            (\failure ->
+                                Task.succeed
+                                    (when failure is
+                                        ProgramError e ->
+                                            name
+                                                ++ ": ProgramError, exitCode = "
+                                                ++ String.fromInt e.exitCode
+                                                ++ ", exitCode + 1 = "
+                                                ++ String.fromInt (e.exitCode + 1)
+                                                ++ ", exitCode > 0 = "
+                                                ++ (if e.exitCode > 0 then "True" else "False")
+
+                                        InitError e ->
+                                            name ++ ": InitError " ++ e.errorCode
+                                    )
+                            )
+                        |> Task.andThen say
+            in
+            Node.endSimpleProgram
+                (row "exit 3" "sh" [ "-c", "exit 3" ] noShell
+                    |> Task.andThen (\_ -> row "killed by runDuration" "sleep" [ "5" ] { noShell | runDuration = ChildProcess.Milliseconds 100 })
+                    |> Task.andThen (\_ -> row "past maximumBytesWrittenToStreams" "echo" [ "more than four bytes" ] { noShell | maximumBytesWrittenToStreams = 4 })
+                    |> Task.andThen (\_ -> row "killed by a signal" "sh" [ "-c", "kill -9 $$" ] noShell)
+                )

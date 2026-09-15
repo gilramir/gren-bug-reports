@@ -1,0 +1,63 @@
+module Main exposing (main)
+
+import Json.Decode as Decode
+import Node
+import Stream
+import Task
+
+
+{-| The first line of `errorToString`, which is where the path is. -}
+firstLine : Result Decode.Error a -> String
+firstLine result =
+    when result is
+        Ok _ ->
+            "Ok"
+
+        Err e ->
+            Decode.errorToString e
+                |> String.split "\n"
+                |> Array.first
+                |> Maybe.withDefault ""
+
+
+rows : Array { call : String, result : String, expected : String }
+rows =
+    [ { call = "field \"a\" int, on {\"a\":true}"
+      , result = firstLine (Decode.decodeString (Decode.field "a" Decode.int) "{\"a\":true}")
+      , expected = "Problem with the value at json.a:"
+      }
+    , { call = "at [\"user\", \"address\", \"city\"] string, on {\"user\":{\"address\":{\"city\":1}}}"
+      , result = firstLine (Decode.decodeString (Decode.at [ "user", "address", "city" ] Decode.string) "{\"user\":{\"address\":{\"city\":1}}}")
+      , expected = "Problem with the value at json.user.address.city:"
+      }
+    , { call = "field \"items\" (array (field \"id\" int)), on {\"items\":[{\"id\":1},{\"id\":null}]}"
+      , result = firstLine (Decode.decodeString (Decode.field "items" (Decode.array (Decode.field "id" Decode.int))) "{\"items\":[{\"id\":1},{\"id\":null}]}")
+      , expected = "Problem with the value at json.items[1].id:"
+      }
+    , { call = "array (array int), on [[1,2,3],[4,true]]"
+      , result = firstLine (Decode.decodeString (Decode.array (Decode.array Decode.int)) "[[1,2,3],[4,true]]")
+      , expected = "Problem with the value at json[1][1]:"
+      }
+    , { call = "array (array int), on [[1,2],[3,4],[true]]"
+      , result = firstLine (Decode.decodeString (Decode.array (Decode.array Decode.int)) "[[1,2],[3,4],[true]]")
+      , expected = "Problem with the value at json[2][0]:"
+      }
+    ]
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram
+        (\env ->
+            Node.endSimpleProgram
+                (Stream.writeLineAsBytes
+                    (String.join "\n"
+                        ([ "| call | result | expected |", "|---|---|---|" ]
+                            ++ Array.map (\r -> "| `" ++ String.replace "|" "\\|" r.call ++ "` | " ++ r.result ++ " | " ++ r.expected ++ " |") rows
+                        )
+                    )
+                    env.stdout
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+                )
+        )

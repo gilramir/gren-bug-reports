@@ -1,0 +1,104 @@
+module Main exposing (main)
+
+{-| `ChildProcess.spawn` of a program that does not exist.
+
+Each row spawns it with `Ignored` streams and prints the exit code the `onExit`
+message receives. With a shell, the shell reports the missing program as exit
+code 127. Without one, node reports it as an `error` event on the child
+process, and nothing listens for that event.
+-}
+
+import Bytes exposing (Bytes)
+import ChildProcess exposing (Connection(..), Shell(..))
+import Init
+import Node
+import Stream
+import Task
+
+
+type alias Row =
+    { label : String
+    , shell : Shell
+    , program : String
+    , arguments : Array String
+    }
+
+
+rows : Array Row
+rows =
+    [ { label = "DefaultShell, no-such-program", shell = DefaultShell, program = "no-such-program", arguments = [] }
+    , { label = "NoShell, no-such-program", shell = NoShell, program = "no-such-program", arguments = [] }
+    ]
+
+
+type Msg
+    = Started
+    | Next Int
+    | Exited { index : Int, code : Int }
+
+
+type alias Model =
+    { permission : ChildProcess.Permission
+    , stdout : Stream.Writable Bytes
+    }
+
+
+main : Node.Program Model Msg
+main =
+    Node.defineProgram
+        { init = init
+        , update = update
+        , subscriptions = \_ -> Sub.none
+        }
+
+
+init : Node.Environment -> Init.Task { model : Model, command : Cmd Msg }
+init env =
+    Init.await ChildProcess.initialize <| \permission ->
+        Node.startProgram
+            { model = { permission = permission, stdout = env.stdout }
+            , command =
+                Stream.writeLineAsBytes "| spawn | exit code | expected |\n|---|---|---|" env.stdout
+                    |> Task.attempt (\_ -> Next 0)
+            }
+
+
+spawnRow : ChildProcess.Permission -> Int -> Cmd Msg
+spawnRow permission index =
+    when Array.get index rows is
+        Nothing ->
+            Cmd.none
+
+        Just r ->
+            ChildProcess.spawn permission
+                r.program
+                r.arguments
+                { shell = r.shell
+                , workingDirectory = ChildProcess.InheritWorkingDirectory
+                , environmentVariables = ChildProcess.InheritEnvironmentVariables
+                , runDuration = ChildProcess.NoLimit
+                , connection = Ignored (\_ -> Started)
+                , onExit = \code -> Exited { index = index, code = code }
+                }
+
+
+update : Msg -> Model -> { model : Model, command : Cmd Msg }
+update msg model =
+    when msg is
+        Started ->
+            { model = model, command = Cmd.none }
+
+        Exited { index, code } ->
+            { model = model
+            , command =
+                when Array.get index rows is
+                    Just r ->
+                        Stream.writeLineAsBytes ("| " ++ r.label ++ " | " ++ String.fromInt code ++ " | non-zero |") model.stdout
+                            |> Task.attempt (\_ -> Next (index + 1))
+
+                    Nothing ->
+                        Cmd.none
+            }
+
+        Next index ->
+            { model = model, command = spawnRow model.permission index }

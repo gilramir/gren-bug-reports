@@ -1,0 +1,99 @@
+module Main exposing (main)
+
+{-| Time `Task.sequence` and `Task.concurrent` over arrays of tasks that
+succeed at once, doubling the length each time.
+-}
+
+import Bytes exposing (Bytes)
+import Init
+import Node
+import Stream
+import Task exposing (Task)
+import Time
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Node.endSimpleProgram (run env.stdout)
+
+
+run : Stream.Writable Bytes -> Task Never {}
+run stdout =
+    let
+        say text =
+            Stream.writeLineAsBytes text stdout
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+
+        timed task =
+            Time.now
+                |> Task.andThen (\t0 -> task |> Task.andThen (\_ -> Time.now) |> Task.map (\t1 -> Time.posixToMillis t1 - Time.posixToMillis t0))
+
+        row n =
+            let
+                tasks =
+                    Array.initialize n 0 Task.succeed
+            in
+            timed (Task.sequence tasks)
+                |> Task.andThen
+                    (\s ->
+                        timed (Task.concurrent tasks)
+                            |> Task.andThen
+                                (\c ->
+                                    timed (sequenceByHalves tasks)
+                                        |> Task.andThen
+                                            (\h ->
+                                                say (String.padLeft 7 ' ' (String.fromInt n) ++ String.padLeft 12 ' ' (String.fromInt s) ++ String.padLeft 14 ' ' (String.fromInt c) ++ String.padLeft 12 ' ' (String.fromInt h))
+                                            )
+                                )
+                    )
+    in
+    say "  tasks   sequence ms  concurrent ms  by halves ms"
+        |> Task.andThen (\_ -> row 10000)
+        |> Task.andThen (\_ -> row 20000)
+        |> Task.andThen (\_ -> row 40000)
+        |> Task.andThen (\_ -> row 80000)
+        |> Task.andThen
+            (\_ ->
+                let
+                    tasks =
+                        Array.initialize 1000 0 (\i -> if i == 700 || i == 900 then Task.fail i else Task.succeed i)
+
+                    ok =
+                        Array.initialize 1000 0 Task.succeed
+
+                    outcome task =
+                        task |> Task.map (\xs -> Ok xs) |> Task.onError (\e -> Task.succeed (Err e))
+                in
+                Task.map2 (\a b -> a && b)
+                    (Task.map2 (==) (outcome (Task.sequence ok)) (outcome (sequenceByHalves ok)))
+                    (Task.map2 (==) (outcome (Task.sequence tasks)) (outcome (sequenceByHalves tasks)))
+                    |> Task.andThen (\same -> say ("same results and same first failure: " ++ (if same then "yes" else "no")))
+            )
+
+
+{-| The fix: run the first half, then the second, and append. Each element is
+copied once per level, so this is O(n log n) where `sequence` is O(n^2).
+-}
+sequenceByHalves : Array (Task x a) -> Task x (Array a)
+sequenceByHalves tasks =
+    when Array.length tasks is
+        0 ->
+            Task.succeed []
+
+        1 ->
+            when Array.first tasks is
+                Just task ->
+                    Task.map (\x -> [ x ]) task
+
+                Nothing ->
+                    Task.succeed []
+
+        n ->
+            let
+                half =
+                    n // 2
+            in
+            sequenceByHalves (Array.slice 0 half tasks)
+                |> Task.andThen (\first -> Task.map (\second -> first ++ second) (sequenceByHalves (Array.slice half n tasks)))

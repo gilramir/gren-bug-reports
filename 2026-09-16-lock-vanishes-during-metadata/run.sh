@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+cd "$(dirname "$0")"
+
+# Everything below needs `gren` on PATH; devbox provides the pinned one.
+if [ -z "$IN_DEVBOX" ]; then
+    exec env IN_DEVBOX=1 devbox run sh ./run.sh
+fi
+
+gren make Main --output=app >/dev/null
+
+node churn.js &
+churn=$!
+trap 'kill $churn; rmdir .lock 2>/dev/null || true' EXIT
+
+echo '$ node app'
+node app

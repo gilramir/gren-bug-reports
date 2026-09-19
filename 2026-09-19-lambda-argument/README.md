@@ -23,6 +23,10 @@ of `apply` on `1` and the lambda. So a tool built on `compiler-common` passes a
 file the compiler rejects, and a formatter that reparses its own output as a
 check has no way to see that it wrote one.
 
+If the relaxation is intended, as the newer parser's behaviour may be, then
+the question is the other way round: whether the Haskell compiler will take
+`apply 1 \b -> b + 1` too, so that the two parsers agree.
+
 `./run.sh` asks both parsers about three modules:
 
 ```

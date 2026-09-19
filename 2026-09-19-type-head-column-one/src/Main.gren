@@ -1,0 +1,60 @@
+module Main exposing (main)
+
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Module as Module
+import Init
+import Node exposing (Environment)
+import Stream
+import String.Parser.Advanced as Parser
+import Task exposing (Task)
+
+
+{-| Does `compiler-common` parse each module? `./run.sh` asks `gren make` the
+same question about the same text and prints both columns side by side.
+
+-}
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+cases : Array { name : String, source : String }
+cases =
+    [ { name = "type-var-indented"
+      , source = "module Probe exposing (..)\n\n\ntype Foo\n    a\n    = Foo a\n"
+      }
+    , { name = "type-var-column-1"
+      , source = "module Probe exposing (..)\n\n\ntype Foo\na\n    = Foo a\n"
+      }
+    , { name = "type-var-column-1-after-comment"
+      , source = "module Probe exposing (..)\n\n\ntype Foo -- c\na\n    = Foo a\n"
+      }
+    , { name = "alias-var-column-1"
+      , source = "module Probe exposing (..)\n\n\ntype alias Bar\na =\n    Maybe a\n"
+      }
+    ]
+
+
+parses : String -> String
+parses source =
+    when Parser.run Module.parser Context.empty source is
+        Ok _ ->
+            "accepts"
+
+        Err _ ->
+            "rejects"
+
+
+report : Environment -> Task Never {}
+report env =
+    cases
+        |> Array.map (\c -> c.name ++ " " ++ parses c.source)
+        |> String.join "\n"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

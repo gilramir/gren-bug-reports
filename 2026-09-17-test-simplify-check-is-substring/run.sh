@@ -6,7 +6,7 @@ if [ -z "$IN_DEVBOX" ]; then
     exec env IN_DEVBOX=1 devbox run sh ./run.sh
 fi
 
-rm -rf test app
+rm -rf app
 mkdir -p src
 cat > gren.json <<'JSON'
 {
@@ -48,8 +48,8 @@ expected =
     Debug.toString 1.1102230246251567e-15
 
 
-report : String
-report =
+row : String
+row =
     let
         test =
             Test.fuzz (Fuzz.floatRange 0 5)
@@ -60,14 +60,9 @@ report =
         Test.Runner.Plain [ runner ] ->
             when Array.first (runner.run {}) |> Maybe.andThen Test.Runner.getFailureReason is
                 Just { given = Just given, description } ->
-                    String.join "\n"
-                        [ "simplified to:       " ++ given
-                        , "expected:            " ++ description
-                        , "String.contains given description = "
-                            ++ (if String.contains given description then "True" else "False")
-                        , "given == description = "
-                            ++ (if given == description then "True" else "False")
-                        ]
+                    "| " ++ given ++ " | " ++ description
+                        ++ " | " ++ Debug.toString (String.contains given description)
+                        ++ " | " ++ Debug.toString (given == description) ++ " |"
 
                 _ ->
                     "the test did not fail with a given value"
@@ -78,15 +73,16 @@ report =
 
 main : Node.SimpleProgram {}
 main =
-    Node.defineSimpleProgram
-        (\env ->
-            Node.endSimpleProgram
-                (Stream.writeLineAsBytes report env.stdout
-                    |> Task.map (\_ -> {})
-                    |> Task.onError (\_ -> Task.succeed {})
-                )
-        )
+    Node.defineSimpleProgram <| \env ->
+        [ "| given | description | String.contains given description | given == description |"
+        , "|---|---|---|---|"
+        , row
+        ]
+            |> String.join "\n"
+            |> (\text -> Stream.writeLineAsBytes text env.stdout)
+            |> Task.map (\_ -> {})
+            |> Task.onError (\_ -> Task.succeed {})
+            |> Node.endSimpleProgram
 GREN
 
-echo '$ gren make Main && node app'
 gren make Main --output=app >/dev/null && node app

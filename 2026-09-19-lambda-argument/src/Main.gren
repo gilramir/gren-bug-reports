@@ -9,10 +9,6 @@ import String.Parser.Advanced as Parser
 import Task exposing (Task)
 
 
-{-| Does `compiler-common` parse each module? `./run.sh` asks `gren make` the
-same question about the same text and prints both columns side by side.
-
--}
 main : Node.SimpleProgram a
 main =
     Node.defineSimpleProgram init

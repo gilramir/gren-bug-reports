@@ -10,12 +10,16 @@ rm -rf test
 git -c advice.detachedHead=false clone --quiet --branch 5.0.0 --depth 1 https://github.com/gren-lang/test.git test
 cd test/tests
 
-echo '$ grep gren-version gren.json'
-grep '"gren-version"' gren.json
+# 1. The suite's own script.
+echo '$ ./run-tests.sh'
+./run-tests.sh 2>&1
 
-# The versions tests/gren.json names (core 5.0.0, node 4.0.0,
-# test-runner-node 4.0.0) do not install on gren 0.6.6, so point the suite at
-# the current releases first, which is what any contributor would do.
+# 2. The same build with a module name, against the suite's gren.json
+# (the download progress left out).
+echo '$ gren make TestsMain --output=/dev/null'
+gren make TestsMain --output=/dev/null 2>&1 | sed -n '/^-- /,$p'
+
+# 3. The same build with tests/gren.json moved to the current releases.
 cat > gren.json <<'JSON'
 {
     "type": "application",
@@ -35,6 +39,5 @@ cat > gren.json <<'JSON'
     }
 }
 JSON
-
-echo '$ gren make TestsMain'
-gren make TestsMain --output=app 2>&1 | grep '^-- '
+echo "\$ gren make TestsMain --output=/dev/null 2>&1 | grep -o -- '-- [A-Z].*'"
+gren make TestsMain --output=/dev/null 2>&1 | grep -o -- '-- [A-Z].*'

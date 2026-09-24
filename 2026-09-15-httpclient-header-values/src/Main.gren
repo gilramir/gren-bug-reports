@@ -13,25 +13,23 @@ main =
     Node.defineSimpleProgram <| \env ->
         Init.await HttpClient.initialize <| \http ->
             let
-                say text =
-                    Stream.writeLineAsBytes text env.stdout
-                        |> Task.map (\_ -> {})
-                        |> Task.onError (\_ -> Task.succeed {})
+                print line =
+                    Stream.writeLineAsBytes line env.stdout
+                        |> Task.onError (\_ -> Task.succeed env.stdout)
             in
             Node.endSimpleProgram
                 (HttpClient.get "data:text/plain,x"
                     |> HttpClient.send http
-                    |> Task.onError (\_ -> Task.succeed { statusCode = 0, statusText = "", headers = Dict.empty, data = {} })
                     |> Task.andThen
                         (\response ->
                             let
                                 values =
                                     Dict.get "content-type" response.headers |> Maybe.withDefault []
                             in
-                            say ("Array.length values = " ++ String.fromInt (Array.length values))
-                                |> Task.andThen (\_ -> say ("Array.first values = " ++ Maybe.withDefault "Nothing" (Array.first values)))
-                                |> Task.andThen (\_ -> say "String.join \", \" values follows")
-                                |> Task.andThen (\_ -> say ("String.join \", \" values = " ++ String.join ", " values))
-                                |> Task.andThen (\_ -> say "done")
+                            print "| call | result | expected |\n|---|---|---|"
+                                |> Task.andThen (\_ -> print ("| `Array.length values` | " ++ String.fromInt (Array.length values) ++ " | 1 |"))
+                                |> Task.andThen (\_ -> print ("| `Array.first values` | " ++ Debug.toString (Array.first values) ++ " | Just \"text/plain\" |"))
+                                |> Task.andThen (\_ -> print ("| `String.join \", \" values` | " ++ String.join ", " values ++ " | text/plain |"))
                         )
+                    |> Task.onError (\_ -> print "request failed")
                 )

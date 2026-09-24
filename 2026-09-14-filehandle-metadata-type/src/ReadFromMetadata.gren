@@ -1,4 +1,4 @@
-module Main exposing (main)
+module ReadFromMetadata exposing (main)
 
 import FileSystem
 import FileSystem.FileHandle as FileHandle
@@ -16,7 +16,8 @@ main =
             Node.endSimpleProgram
                 (FileHandle.openForRead fs (Path.fromPosixString "gren.json")
                     |> Task.andThen FileHandle.metadata
-                    |> Task.map (\m -> "byteSize = " ++ String.fromInt m.byteSize)
+                    |> Task.andThen FileHandle.read
+                    |> Task.map (\_ -> "read from the metadata")
                     |> Task.onError (\e -> Task.succeed (FileSystem.errorToString e))
                     |> Task.andThen (\line -> Stream.writeLineAsBytes line env.stdout)
                     |> Task.onError (\_ -> Task.succeed env.stdout)

@@ -7,13 +7,23 @@ import Stream
 import Task
 
 
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram
+        (\env ->
+            Stream.writeLineAsBytes (String.join "\n" table) env.stdout
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+                |> Node.endSimpleProgram
+        )
+
+
 type Clip
     = Duration Int
     | Samples (Array Int)
 
 
-{-| A clip is either `{ "length": seconds }` or the array of its samples.
--}
+{-| A clip is either `{ "length": seconds }` or the array of its samples. -}
 clip : Decoder Clip
 clip =
     Decode.oneOf
@@ -22,67 +32,27 @@ clip =
         ]
 
 
-showClip : Result Decode.Error Clip -> String
-showClip result =
-    when result is
-        Ok (Duration n) ->
-            "Ok (Duration " ++ String.fromInt n ++ ")"
-
-        Ok (Samples samples) ->
-            "Ok (Samples [ " ++ String.join ", " (Array.map String.fromInt samples) ++ " ])"
-
-        Err _ ->
-            "Err"
-
-
-show : (a -> String) -> Result Decode.Error a -> String
-show f result =
-    when result is
-        Ok v ->
-            "Ok " ++ f v
-
-        Err _ ->
-            "Err"
-
-
-rows : Array { call : String, result : String, expected : String }
-rows =
-    [ { call = "decodeString clip \"{ \\\"length\\\": 90 }\""
-      , result = showClip (Decode.decodeString clip "{ \"length\": 90 }")
-      , expected = "Ok (Duration 90)"
-      }
-    , { call = "decodeString clip \"[ 10, 20, 30 ]\""
-      , result = showClip (Decode.decodeString clip "[ 10, 20, 30 ]")
-      , expected = "Ok (Samples [ 10, 20, 30 ])"
-      }
-    , { call = "decodeString (field \"length\" int) \"[ 10, 20, 30 ]\""
-      , result = show String.fromInt (Decode.decodeString (Decode.field "length" Decode.int) "[ 10, 20, 30 ]")
-      , expected = "Err"
-      }
-    , { call = "decodeString (field \"0\" string) \"[ \\\"a\\\" ]\""
-      , result = show (\str -> "\"" ++ str ++ "\"") (Decode.decodeString (Decode.field "0" Decode.string) "[ \"a\" ]")
-      , expected = "Err"
-      }
-    , { call = "decodeString (field \"constructor\" value) \"{}\" |> map (encode 0)"
-      , result = show (Encode.encode 0) (Decode.decodeString (Decode.field "constructor" Decode.value) "{}")
-      , expected = "Err"
-      }
+table : Array String
+table =
+    [ "| call | result | expected |"
+    , "|---|---|---|"
+    , row "decodeString clip \"{ \\\"length\\\": 90 }\"" (Decode.decodeString clip "{ \"length\": 90 }") "Ok (Duration 90)"
+    , row "decodeString clip \"[ 10, 20, 30 ]\"" (Decode.decodeString clip "[ 10, 20, 30 ]") "Ok (Samples [10,20,30])"
+    , row "decodeString (field \"length\" int) \"[ 10, 20, 30 ]\"" (Decode.decodeString (Decode.field "length" Decode.int) "[ 10, 20, 30 ]") "Err"
+    , row "decodeString (field \"0\" string) \"[ \\\"a\\\" ]\"" (Decode.decodeString (Decode.field "0" Decode.string) "[ \"a\" ]") "Err"
+    , row "decodeString (field \"constructor\" value) \"{}\" \\|> map (encode 0)" (Decode.decodeString (Decode.field "constructor" Decode.value) "{}" |> Result.map (Encode.encode 0)) "Err"
     ]
 
 
-main : Node.SimpleProgram a
-main =
-    Node.defineSimpleProgram
-        (\env ->
-            Node.endSimpleProgram
-                (Stream.writeLineAsBytes
-                    (String.join "\n"
-                        ([ "| call | result | expected |", "|---|---|---|" ]
-                            ++ Array.map (\r -> "| `" ++ String.replace "|" "\\|" r.call ++ "` | " ++ r.result ++ " | " ++ r.expected ++ " |") rows
-                        )
-                    )
-                    env.stdout
-                    |> Task.map (\_ -> {})
-                    |> Task.onError (\_ -> Task.succeed {})
-                )
-        )
+row : String -> Result Decode.Error a -> String -> String
+row call result expected =
+    let
+        shown =
+            when result is
+                Ok _ ->
+                    Debug.toString result
+
+                Err _ ->
+                    "Err"
+    in
+    "| `" ++ call ++ "` | " ++ shown ++ " | " ++ expected ++ " |"

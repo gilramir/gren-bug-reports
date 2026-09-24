@@ -1,0 +1,25 @@
+module Main exposing (main)
+
+import Bytes
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Node.endSimpleProgram
+            (Bytes.getHostEndianness
+                |> Task.andThen
+                    (\endianness ->
+                        when endianness is
+                            Bytes.LE ->
+                                Stream.writeLineAsBytes "getHostEndianness: LE" env.stdout
+
+                            Bytes.BE ->
+                                Stream.writeLineAsBytes "getHostEndianness: BE" env.stdout
+                    )
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+            )

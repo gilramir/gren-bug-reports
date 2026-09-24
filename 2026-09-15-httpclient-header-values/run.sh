@@ -8,5 +8,5 @@ fi
 
 gren make Main --output=app >/dev/null
 
-echo '$ node app'
-node app
+echo '$ node app; echo "exit status $?"'
+node app; echo "exit status $?"

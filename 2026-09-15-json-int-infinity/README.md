@@ -1,15 +1,70 @@
 # `Json.Decode.int` accepts `1e400` and answers an `Int` that is `Infinity`
 
-## Summary
+**Repository:** `gren-lang/core`
+**Found against:** `gren` 0.6.6, `gren-lang/core` 7.4.2, node 22
+**Reproduction:** https://github.com/gilramir/gren-bug-reports/tree/main/2026-09-15-json-int-infinity
+**Filed:** not yet.
 
-JSON has no infinity, but a number too large for a double, such as `1e400`, is
-valid JSON and `JSON.parse` reads it as `Infinity`. `Json.Decode.int` then
-accepts it, so a program gets an `Int` that is not an integer. Nothing
-downstream can tell: `String.fromInt` writes `"Infinity"`, which `String.toInt`
-does not read back, and arithmetic on it answers `NaN`.
+`1e400` is valid JSON, and `JSON.parse` reads it as `Infinity` because it is
+too large for a double. `Json.Decode.int` then accepts it, so the program holds
+an `Int` that is not an integer and nothing downstream can tell:
+`String.fromInt` writes `"Infinity"`, which `String.toInt` does not read back,
+and `n - n` is `NaN`. (`Json.Decode.float` answering `Infinity` is not this
+bug; that is the double the text rounds to.)
 
 ## Reproduction
 
+`gren.json` dependencies: `gren-lang/core` 7.4.2, `gren-lang/node` 6.1.3. Save as `src/Main.gren` and run `gren run Main`:
+
+```gren
+module Main exposing (main)
+
+import Json.Decode as Decode
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram
+        (\env ->
+            Stream.writeLineAsBytes (String.join "\n" table) env.stdout
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+                |> Node.endSimpleProgram
+        )
+
+
+table : Array String
+table =
+    [ "| call | result | expected |"
+    , "|---|---|---|"
+    , row "decodeString int \"12\"" (Decode.decodeString Decode.int "12") "Ok 12"
+    , row "decodeString int \"1e400\"" (Decode.decodeString Decode.int "1e400") "Err"
+    , row "decodeString int \"-1e400\"" (Decode.decodeString Decode.int "-1e400") "Err"
+    , row "decodeString int \"1e400\" \\|> map (String.fromInt >> String.toInt)" (Decode.decodeString Decode.int "1e400" |> Result.map (String.fromInt >> String.toInt)) "Err"
+    , row "decodeString int \"1e400\" \\|> map (\\n -> n - n)" (Decode.decodeString Decode.int "1e400" |> Result.map (\n -> n - n)) "Err"
+    ]
+
+
+row : String -> Result Decode.Error a -> String -> String
+row call result expected =
+    let
+        shown =
+            when result is
+                Ok _ ->
+                    Debug.toString result
+
+                Err _ ->
+                    "Err"
+    in
+    "| `" ++ call ++ "` | " ++ shown ++ " | " ++ expected ++ " |"
+```
+
+Output:
+
+```
 | call | result | expected |
 |---|---|---|
 | `decodeString int "12"` | Ok 12 | Ok 12 |
@@ -17,17 +72,26 @@ does not read back, and arithmetic on it answers `NaN`.
 | `decodeString int "-1e400"` | Ok -Infinity | Err |
 | `decodeString int "1e400" \|> map (String.fromInt >> String.toInt)` | Ok Nothing | Err |
 | `decodeString int "1e400" \|> map (\n -> n - n)` | Ok NaN | Err |
+```
 
-`Json.Decode.float` answering `Infinity` for `1e400` is not this bug: that is
-the double the text rounds to.
+## Cause
 
-## Cause and fix
+`_Json_decodeInt` in `src/Gren/Kernel/Json.js`:
 
-`_Json_decodeInt` in `Gren/Kernel/Json.js` accepts a number when
-`Math.trunc(value) === value`, and `Math.trunc(Infinity)` is `Infinity`. Its
-second test, `isFinite(value) && !(value % 1)`, is the right one, and is never
-reached for an infinity because the first test has already said yes. Either
-test alone, with `isFinite`, is the fix:
+```js
+  return typeof value !== "number"
+    ? _Json_expecting("an INT", value)
+    : Math.trunc(value) === value
+      ? __Result_Ok(value)
+      : isFinite(value) && !(value % 1)
+        ? __Result_Ok(value)
+        : _Json_expecting("an INT", value);
+```
+
+`Math.trunc(Infinity) === Infinity`, so the first test says yes and the second,
+which checks `isFinite`, is never reached.
+
+## Fix
 
 ```js
 var _Json_decodeInt = _Json_decodePrim(function (value) {
@@ -38,7 +102,3 @@ var _Json_decodeInt = _Json_decodePrim(function (value) {
 ```
 
 `Number.isInteger` is false for both infinities and for `NaN`.
-
-- **Filed as:** not yet filed
-- **Package:** `gren-lang/core` 7.4.2
-- **Versions:** `gren` 0.6.6, node 22

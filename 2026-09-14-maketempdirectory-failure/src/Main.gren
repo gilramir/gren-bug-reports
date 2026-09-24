@@ -12,16 +12,10 @@ main : Node.SimpleProgram a
 main =
     Node.defineSimpleProgram <| \env ->
         Init.await FileSystem.initialize <| \fs ->
-            let
-                say text =
-                    Stream.writeLineAsBytes text env.stdout
-                        |> Task.map (\_ -> {})
-                        |> Task.onError (\_ -> Task.succeed {})
-            in
             Node.endSimpleProgram
-                (say "making a temporary directory under a prefix that does not exist"
-                    |> Task.andThen (\_ -> FileSystem.makeTempDirectory fs "no-such-directory/x")
+                (FileSystem.makeTempDirectory fs "no-such-directory/x"
                     |> Task.map (\path -> "made " ++ Path.toPosixString path)
                     |> Task.onError (\e -> Task.succeed ("failed: " ++ FileSystem.errorCode e))
-                    |> Task.andThen say
+                    |> Task.andThen (\line -> Stream.writeLineAsBytes line env.stdout)
+                    |> Task.onError (\_ -> Task.succeed env.stdout)
                 )

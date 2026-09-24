@@ -1,64 +1,101 @@
 # `HttpClient.send` puts a header's string where `Response` says `Array String`
 
-`gren` 0.6.6, `gren-lang/core` 7.4.2, `gren-lang/node` 6.1.3, node 22, Linux x86-64.
+**Repository:** `gren-lang/node`
+**Found against:** `gren` 0.6.6, `gren-lang/core` 7.4.2, `gren-lang/node` 6.1.3, node 22
 
-## Summary
+`./run.sh` builds and runs the program below with the pinned Gren and node (devbox).
 
-`HttpClient.Response`'s headers are a `Dict String (Array String)`, so that a
-header sent more than once keeps each value. `HttpClient.send` puts a string
-there instead of an array. For a response whose `content-type` is `text/plain`:
-
-| call on `Dict.get "content-type" response.headers \|> Maybe.withDefault []` | result | expected |
-|---|---|---|
-| `Array.length values` | **`10`** | `1` |
-| `Array.first values` | **`Just "t"`** | `Just "text/plain"` |
-| `String.join ", " values` | **the program stops**: nothing more is printed, stderr is empty, and it exits 0 | `"text/plain"` |
-
-The last row is the worst of the three. `String.join` throws on the string, and
-the throw happens inside `fetch`'s promise chain, so the request's own
-`.catch` receives it, after the task has already succeeded, and nothing reports
-it.
-
-The cause is `_HttpClient_formatResponse` in `Gren/Kernel/HttpClient.js`, which
-`send` uses:
-
-```js
-for (const [key, value] of res.headers.entries()) {
-  headerPairs.push({ __$key: key.toLowerCase(), __$value: value });
-}
-```
-
-`Headers.entries()` gives each value as a string. `fetch` joins a repeated
-header with `", "` itself, except `set-cookie`, which `entries()` gives once
-per cookie, so this also keeps only the last cookie. The streaming API's
-`_HttpClient_formatResponseLegacy` reads `res.headersDistinct`, whose values
-are arrays, and is not affected.
+`HttpClient.Response`'s headers are a `Dict String (Array String)`, but
+`HttpClient.send` stores each header's value as a plain string. So for
+`content-type: text/plain`, `Array.length` of the values is 10 and
+`Array.first` is `Just "t"`, and `String.join ", " values` throws inside
+`fetch`'s promise chain after the task has already succeeded: the program
+silently stops, with nothing on stderr and exit status 0. A repeated
+`set-cookie` also keeps only the last cookie.
 
 ## Reproduction
 
+`gren.json` dependencies: `gren-lang/core` 7.4.2, `gren-lang/node` 6.1.3. Save as `src/Main.gren`. Build and run with `gren make Main --output=app && node app`; the third row is never printed:
+
+```gren
+module Main exposing (main)
+
+import Dict
+import HttpClient
+import Init
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Init.await HttpClient.initialize <| \http ->
+            let
+                print line =
+                    Stream.writeLineAsBytes line env.stdout
+                        |> Task.onError (\_ -> Task.succeed env.stdout)
+            in
+            Node.endSimpleProgram
+                (HttpClient.get "data:text/plain,x"
+                    |> HttpClient.send http
+                    |> Task.andThen
+                        (\response ->
+                            let
+                                values =
+                                    Dict.get "content-type" response.headers |> Maybe.withDefault []
+                            in
+                            print "| call | result | expected |\n|---|---|---|"
+                                |> Task.andThen (\_ -> print ("| `Array.length values` | " ++ String.fromInt (Array.length values) ++ " | 1 |"))
+                                |> Task.andThen (\_ -> print ("| `Array.first values` | " ++ Debug.toString (Array.first values) ++ " | Just \"text/plain\" |"))
+                                |> Task.andThen (\_ -> print ("| `String.join \", \" values` | " ++ String.join ", " values ++ " | text/plain |"))
+                        )
+                    |> Task.onError (\_ -> print "request failed")
+                )
 ```
-$ node app
-Array.length values = 10
-Array.first values = t
-String.join ", " values follows
+
+Output:
+
+```
+$ node app; echo "exit status $?"
+| call | result | expected |
+|---|---|---|
+| `Array.length values` | 10 | 1 |
+| `Array.first values` | Just "t" | Just "text/plain" |
+exit status 0
 ```
 
-The program's last two lines are never printed.
+## Cause
 
-## The fix
-
-Collect each header's values into an array, one entry per `entries()` item:
+`_HttpClient_formatResponse` in `Gren/Kernel/HttpClient.js`, which `send` uses:
 
 ```js
-let headerPairs = [];
-let index = {};
 for (const [key, value] of res.headers.entries()) {
-  const name = key.toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(index, name)) {
-    headerPairs[index[name]].__$value.push(value);
-  } else {
-    index[name] = headerPairs.length;
-    headerPairs.push({ __$key: name, __$value: [value] });
-  }
+  headerDict = A3(__Dict_set, key.toLowerCase(), value, headerDict);
 }
 ```
+
+`Headers.entries()` gives each value as a string. `fetch` already joins a
+repeated header with `", "`, except `set-cookie`, which `entries()` gives once
+per cookie, so `__Dict_set` keeps only the last one. The streaming API's
+`_HttpClient_formatResponseLegacy` reads `res.headersDistinct`, whose values are
+arrays, and is not affected.
+
+## Fix
+
+Collect each header's values into an array:
+
+```js
+const values = {};
+for (const [key, value] of res.headers.entries()) {
+  const name = key.toLowerCase();
+  (values[name] ??= []).push(value);
+}
+for (const [name, list] of Object.entries(values)) {
+  headerDict = A3(__Dict_set, name, list, headerDict);
+}
+```
+
+With this change the program above prints all three rows with the expected
+results.

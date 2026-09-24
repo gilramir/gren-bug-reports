@@ -34,56 +34,44 @@ cat > src/Main.gren <<'GREN'
 module Main exposing (main)
 
 import Fuzz.Float
-import MicroBitwiseExtra as Bitwise
+import MicroBitwiseExtra
 import Node
 import Stream
 import Task
 
 
-rows : Array { hi : Int, lo : Int }
-rows =
-    [ { hi = 0, lo = 0x7FFFFFFE }
-    , { hi = 0, lo = 0x7FFFFFFF }
-    , { hi = 0, lo = 0x80000000 }
-    , { hi = 0, lo = 0xFFFFFFFF }
-    , { hi = 1, lo = 0 }
-    , { hi = 1, lo = 0x80000000 }
-    ]
-
-
-show : { hi : Int, lo : Int } -> String
-show t =
-    "{ hi = " ++ String.fromInt t.hi ++ ", lo = " ++ String.fromInt t.lo ++ " }"
-
-
-line : { hi : Int, lo : Int } -> String
-line t =
-    show t
-        ++ "  int52FromTuple = "
-        ++ String.fromInt (Bitwise.int52FromTuple t)
-        ++ "  wellShrinkingFloat = "
-        ++ String.fromFloat (Fuzz.Float.wellShrinkingFloat t)
+row : Int -> Int -> String
+row hi lo =
+    "| ("
+        ++ String.fromInt hi
+        ++ ", "
+        ++ String.fromInt lo
+        ++ ") | "
+        ++ String.fromInt (MicroBitwiseExtra.int52FromTuple { hi = hi, lo = lo })
+        ++ " | "
+        ++ String.fromFloat (Fuzz.Float.wellShrinkingFloat { hi = hi, lo = lo })
+        ++ " | "
+        ++ String.fromInt (hi * 0x100000000 + lo)
+        ++ " |"
 
 
 main : Node.SimpleProgram {}
 main =
-    Node.defineSimpleProgram
-        (\env ->
-            Node.endSimpleProgram
-                (Stream.writeLineAsBytes
-                    (String.join "\n"
-                        (Array.map line rows
-                            ++ [ "int52FromTuple (int52ToTuple 2147483648) = "
-                                    ++ String.fromInt (Bitwise.int52FromTuple (Bitwise.int52ToTuple 2147483648))
-                               ]
-                        )
-                    )
-                    env.stdout
-                    |> Task.map (\_ -> {})
-                    |> Task.onError (\_ -> Task.succeed {})
-                )
-        )
+    Node.defineSimpleProgram <| \env ->
+        [ "| (hi, lo) | int52FromTuple | wellShrinkingFloat | expected |"
+        , "|---|---|---|---|"
+        , row 0 0x7FFFFFFF
+        , row 0 0x80000000
+        , row 0 0xFFFFFFFF
+        , row 1 0x80000000
+        , "int52FromTuple (int52ToTuple 2147483648) = "
+            ++ String.fromInt (MicroBitwiseExtra.int52FromTuple (MicroBitwiseExtra.int52ToTuple 2147483648))
+        ]
+            |> String.join "\n"
+            |> (\text -> Stream.writeLineAsBytes text env.stdout)
+            |> Task.map (\_ -> {})
+            |> Task.onError (\_ -> Task.succeed {})
+            |> Node.endSimpleProgram
 GREN
 
-echo '$ gren make Main && node app'
 gren make Main --output=app >/dev/null && node app

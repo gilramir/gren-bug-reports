@@ -6,64 +6,38 @@ import Stream
 import Task
 
 
-show : (a -> String) -> Result Decode.Error a -> String
-show f result =
-    when result is
-        Ok v ->
-            "Ok " ++ f v
-
-        Err _ ->
-            "Err"
-
-
-showMaybe : Maybe Int -> String
-showMaybe m =
-    when m is
-        Just n ->
-            "Just " ++ String.fromInt n
-
-        Nothing ->
-            "Nothing"
-
-
-rows : Array { call : String, result : String, expected : String }
-rows =
-    [ { call = "decodeString int \"12\""
-      , result = show String.fromInt (Decode.decodeString Decode.int "12")
-      , expected = "Ok 12"
-      }
-    , { call = "decodeString int \"1e400\""
-      , result = show String.fromInt (Decode.decodeString Decode.int "1e400")
-      , expected = "Err"
-      }
-    , { call = "decodeString int \"-1e400\""
-      , result = show String.fromInt (Decode.decodeString Decode.int "-1e400")
-      , expected = "Err"
-      }
-    , { call = "decodeString int \"1e400\" |> map (String.fromInt >> String.toInt)"
-      , result = show showMaybe (Decode.decodeString Decode.int "1e400" |> Result.map (String.fromInt >> String.toInt))
-      , expected = "Err"
-      }
-    , { call = "decodeString int \"1e400\" |> map (\\n -> n - n)"
-      , result = show String.fromInt (Decode.decodeString Decode.int "1e400" |> Result.map (\n -> n - n))
-      , expected = "Err"
-      }
-    ]
-
-
 main : Node.SimpleProgram a
 main =
     Node.defineSimpleProgram
         (\env ->
-            Node.endSimpleProgram
-                (Stream.writeLineAsBytes
-                    (String.join "\n"
-                        ([ "| call | result | expected |", "|---|---|---|" ]
-                            ++ Array.map (\r -> "| `" ++ String.replace "|" "\\|" r.call ++ "` | " ++ r.result ++ " | " ++ r.expected ++ " |") rows
-                        )
-                    )
-                    env.stdout
-                    |> Task.map (\_ -> {})
-                    |> Task.onError (\_ -> Task.succeed {})
-                )
+            Stream.writeLineAsBytes (String.join "\n" table) env.stdout
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+                |> Node.endSimpleProgram
         )
+
+
+table : Array String
+table =
+    [ "| call | result | expected |"
+    , "|---|---|---|"
+    , row "decodeString int \"12\"" (Decode.decodeString Decode.int "12") "Ok 12"
+    , row "decodeString int \"1e400\"" (Decode.decodeString Decode.int "1e400") "Err"
+    , row "decodeString int \"-1e400\"" (Decode.decodeString Decode.int "-1e400") "Err"
+    , row "decodeString int \"1e400\" \\|> map (String.fromInt >> String.toInt)" (Decode.decodeString Decode.int "1e400" |> Result.map (String.fromInt >> String.toInt)) "Err"
+    , row "decodeString int \"1e400\" \\|> map (\\n -> n - n)" (Decode.decodeString Decode.int "1e400" |> Result.map (\n -> n - n)) "Err"
+    ]
+
+
+row : String -> Result Decode.Error a -> String -> String
+row call result expected =
+    let
+        shown =
+            when result is
+                Ok _ ->
+                    Debug.toString result
+
+                Err _ ->
+                    "Err"
+    in
+    "| `" ++ call ++ "` | " ++ shown ++ " | " ++ expected ++ " |"

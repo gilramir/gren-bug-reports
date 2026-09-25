@@ -53,7 +53,7 @@ row hi lo =
 main : Node.SimpleProgram {}
 main =
     Node.defineSimpleProgram <| \env ->
-        [ "| (hi, lo) | int52FromTuple | wellShrinkingFloat | expected |"
+        [ "| (hi, lo) | int52FromTuple | wellShrinkingFloat | hi * 2^32 + lo |"
         , "|---|---|---|---|"
         , row 0 0x7FFFFFFF
         , row 0 0x80000000
@@ -73,10 +73,13 @@ main =
 gren make Main --output=app && node app
 ```
 
-Output:
+Output. The last column is `hi * 0x100000000 + lo`, the number the pair
+stands for, computed without either function. On a whole number
+`wellShrinkingFloat` answers what `int52FromTuple` does, so both middle
+columns should equal the last one; every row where they do not is the bug.
 
 ```
-| (hi, lo) | int52FromTuple | wellShrinkingFloat | expected |
+| (hi, lo) | int52FromTuple | wellShrinkingFloat | hi * 2^32 + lo |
 |---|---|---|---|
 | (0, 2147483647) | 2147483647 | 2147483647 | 2147483647 |
 | (0, 2147483648) | -2147483648 | -2147483648 | 2147483648 |

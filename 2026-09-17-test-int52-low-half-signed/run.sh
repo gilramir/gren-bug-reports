@@ -58,7 +58,7 @@ row hi lo =
 main : Node.SimpleProgram {}
 main =
     Node.defineSimpleProgram <| \env ->
-        [ "| (hi, lo) | int52FromTuple | wellShrinkingFloat | expected |"
+        [ "| (hi, lo) | int52FromTuple | wellShrinkingFloat | hi * 2^32 + lo |"
         , "|---|---|---|---|"
         , row 0 0x7FFFFFFF
         , row 0 0x80000000

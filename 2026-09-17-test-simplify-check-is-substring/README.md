@@ -88,6 +88,55 @@ Output:
 | 5 | 1.1102230246251567e-15 | True | False |
 ```
 
+## Cause
+
+The row, `tests/src/FuzzerTests.gren` line 1072 at 5.0.0:
+
+```gren
+                , simplifiesTowards "(0,+) non-zero" 1.1102230246251567e-15 (Fuzz.floatRange 0 5) (\n -> n == 0)
+```
+
+`simplifiesTowardsWith` turns the expected value into text with
+`Debug.toString` and makes it the failure's description, through
+`expectSimplifiesTo` (`tests/src/Helpers.gren`, lines 41-43 and 337-349):
+
+```gren
+expectSimplifiesTo : String -> Bool -> Expectation
+expectSimplifiesTo label a =
+    Expect.equal True a |> Expect.onFail label
+
+
+simplifiesTowardsWith : { runs : Int } -> String -> a -> Fuzzer a -> (a -> Bool) -> Test
+simplifiesTowardsWith runs label value fuzzer fn =
+    let
+        valueString =
+            Debug.toString value
+    in
+    testSimplifyingWith runs <|
+        Test.fuzz fuzzer
+            ("[" ++ label ++ "] Simplifies towards " ++ valueString)
+            (\fuzzedValue ->
+                fn fuzzedValue
+                    |> expectSimplifiesTo valueString
+            )
+```
+
+`testSimplifyingWith` then compares the value the fuzzer shrank to, `given`,
+with that description by substring (lines 57-62):
+
+```gren
+                Just g ->
+                    if String.contains g description then
+                        Ok {}
+
+                    else
+                        Err <| "Got simplified value " ++ g ++ " but expected " ++ description
+```
+
+`g` is `"5"` and `description` is `"1.1102230246251567e-15"`, so the check
+passes. Any shrunk value whose text appears inside the expected value's text
+passes the same way: `1` for an expected `10`, `-1` for `-15`.
+
 ## Fix
 
 `simplifiesTowardsMany` joins several expected values with `|`, which is

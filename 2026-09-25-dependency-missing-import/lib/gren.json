@@ -1,0 +1,15 @@
+{
+    "type": "package",
+    "platform": "common",
+    "name": "example/lib",
+    "summary": "A package whose one module imports a module that does not exist",
+    "license": "BSD-3-Clause",
+    "version": "3.2.1",
+    "exposed-modules": [
+        "Lib"
+    ],
+    "gren-version": "0.6.0 <= v < 0.7.0",
+    "dependencies": {
+        "gren-lang/core": "7.0.0 <= v < 8.0.0"
+    }
+}

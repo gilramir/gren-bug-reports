@@ -1,0 +1,8 @@
+module Lib exposing (value)
+
+import Missing
+
+
+value : Int
+value =
+    1

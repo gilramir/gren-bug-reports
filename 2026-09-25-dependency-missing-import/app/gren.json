@@ -1,0 +1,15 @@
+{
+    "type": "application",
+    "platform": "common",
+    "source-directories": [
+        "src"
+    ],
+    "gren-version": "0.6.6",
+    "dependencies": {
+        "direct": {
+            "example/lib": "local:../lib",
+            "gren-lang/core": "7.4.2"
+        },
+        "indirect": {}
+    }
+}

@@ -64,4 +64,35 @@ But `pick` needs the 1st argument to be:
     a
 ```
 
+## Cause
+
+`recDefsHelp` in `compiler/src/Type/Constrain/Expression.hs` constrains a group
+of unannotated definitions that call each other. For each definition it seeds
+the definition's *pattern* state with the variables of the definitions before
+it, and then keeps only the current definition's variables for the group:
+
+```haskell
+(Args newFlexVars tipe resultType (Pattern.State headers pvars revCons)) <-
+  argsHelp args (Pattern.State Map.empty flexVars [])
+...
+Info { _vars = newFlexVars, ... }
+```
+
+So the group's `CLet` introduces only the last definition's argument and
+result variables, and every other definition's are introduced in the next
+definition's pattern `CLet`, and generalized when that one closes, before the
+rest of the group and the `let` body have used them. Elm's `recDefsHelp` is the
+same code, which is why elm/compiler#1766 has the same symptom and workaround.
+
+The fix introduces them all in the group's `CLet`:
+
+```haskell
+(Args newFlexVars tipe resultType (Pattern.State headers pvars revCons)) <-
+  argsHelp args Pattern.emptyState
+...
+Info { _vars = newFlexVars ++ flexVars, ... }
+```
+
+With it, `pick "x" "y" 3` compiles and prints `y`, and `pick 1 2 4` prints `1`.
+
 Found against `gren` 0.6.6, `gren-lang/core` 7.4.2.

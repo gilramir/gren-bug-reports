@@ -1,0 +1,42 @@
+module Main exposing (main)
+
+import Dict
+import HttpClient
+import Init
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Init.await HttpClient.initialize <| \http ->
+            let
+                print line =
+                    Stream.writeLineAsBytes line env.stdout
+                        |> Task.onError (\_ -> Task.succeed env.stdout)
+
+                url =
+                    "http://127.0.0.1:" ++ (Array.get 2 env.args |> Maybe.withDefault "") ++ "/"
+
+                row headers name expected =
+                    "| `" ++ name ++ "` | " ++ Debug.toString (Dict.get name headers) ++ " | " ++ expected ++ " |"
+            in
+            Node.endSimpleProgram
+                (HttpClient.get url
+                    |> HttpClient.expectAnything
+                    |> HttpClient.send http
+                    |> Task.andThen
+                        (\response ->
+                            print
+                                (String.join "\n"
+                                    [ "| header | result | expected |"
+                                    , "|---|---|---|"
+                                    , row response.headers "date" "Just [\"Mon, 28 Sep 2026 12:00:00 GMT\"]"
+                                    , row response.headers "set-cookie" "Just [\"a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT\", \"b=2\"]"
+                                    ]
+                                )
+                        )
+                    |> Task.onError (\_ -> print "request failed")
+                )

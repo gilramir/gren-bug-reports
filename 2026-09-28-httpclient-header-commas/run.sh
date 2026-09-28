@@ -15,11 +15,8 @@ git -C node-head checkout -q "$NODE_COMMIT"
 
 gren make Main --output=app >/dev/null || exit 1
 
-node server.mjs > server.port &
-SERVER=$!
-trap 'kill $SERVER 2>/dev/null' EXIT
-while [ ! -s server.port ]; do sleep 0.1; done
-
-echo "\$ node app $(cat server.port)   # gren-lang/node $(git -C node-head rev-parse --short HEAD)"
-node app "$(cat server.port)"
-rm -f server.port
+echo '$ curl -sI https://github.com | grep -iE "^(date|set-cookie):" | cut -c1-100'
+curl -sI https://github.com | grep -iE '^(date|set-cookie):' | cut -c1-100
+echo
+echo "\$ node app   # gren-lang/node $(git -C node-head rev-parse --short HEAD)"
+node app

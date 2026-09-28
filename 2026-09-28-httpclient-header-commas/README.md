@@ -6,8 +6,9 @@
 node#71), node 22
 
 `./run.sh` clones `gren-lang/node`, checks out `ecf18b1`, uses it as a
-`local:` dependency, starts `server.mjs` and runs the program below against it
-with the pinned Gren and node (devbox).
+`local:` dependency, and runs the program below against `https://github.com`
+with the pinned Gren and node (devbox), after printing the same headers as
+`curl` sees them.
 
 `cab69f7` fixed node#71 by splitting the string `Headers.entries()` gives on
 `,`. That separates the values `fetch` joined, but it also cuts every value
@@ -18,15 +19,8 @@ too.
 
 ## Reproduction
 
-`server.mjs` answers with
-
-```
-date: Mon, 28 Sep 2026 12:00:00 GMT
-set-cookie: a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT
-set-cookie: b=2
-```
-
-and `src/Main.gren` prints what `send` gives for each:
+`src/Main.gren` requests `https://github.com` and prints how many values `send`
+gives for `date` and `set-cookie`, each cut to 40 characters:
 
 ```gren
 module Main exposing (main)
@@ -48,24 +42,33 @@ main =
                     Stream.writeLineAsBytes line env.stdout
                         |> Task.onError (\_ -> Task.succeed env.stdout)
 
-                url =
-                    "http://127.0.0.1:" ++ (Array.get 2 env.args |> Maybe.withDefault "") ++ "/"
-
                 row headers name expected =
-                    "| `" ++ name ++ "` | " ++ Debug.toString (Dict.get name headers) ++ " | " ++ expected ++ " |"
+                    let
+                        values =
+                            Dict.get name headers |> Maybe.withDefault []
+                    in
+                    "| `"
+                        ++ name
+                        ++ "` | "
+                        ++ String.fromInt (Array.length values)
+                        ++ ": "
+                        ++ Debug.toString (Array.map (String.takeFirst 40) values)
+                        ++ " | "
+                        ++ expected
+                        ++ " |"
             in
             Node.endSimpleProgram
-                (HttpClient.get url
+                (HttpClient.get "https://github.com"
                     |> HttpClient.expectAnything
                     |> HttpClient.send http
                     |> Task.andThen
                         (\response ->
                             print
                                 (String.join "\n"
-                                    [ "| header | result | expected |"
+                                    [ "| header | values (each cut to 40 characters) | expected |"
                                     , "|---|---|---|"
-                                    , row response.headers "date" "Just [\"Mon, 28 Sep 2026 12:00:00 GMT\"]"
-                                    , row response.headers "set-cookie" "Just [\"a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT\", \"b=2\"]"
+                                    , row response.headers "date" "1: the date"
+                                    , row response.headers "set-cookie" "one per cookie, each whole"
                                     ]
                                 )
                         )
@@ -73,16 +76,25 @@ main =
                 )
 ```
 
-Output:
+Output (the dates and cookies change from run to run):
 
 ```
 $ ./run.sh
-$ node app 33969   # gren-lang/node ecf18b1
-| header | result | expected |
+$ curl -sI https://github.com | grep -iE "^(date|set-cookie):" | cut -c1-100
+date: Mon, 28 Sep 2026 11:26:35 GMT
+set-cookie: _gh_sess=MWq%2FcNUrf4Q3bNi1kv6q07OvwpE3Q3bKziMaF7XMMPgBgx%2BB03DhXftkqxARvrl2D5bfTXYUXZw
+set-cookie: _octo=GH1.1.1348102763.1790594800; expires=Tue, 28 Sep 2027 11:26:40 GMT; domain=.github
+set-cookie: logged_in=no; expires=Tue, 28 Sep 2027 11:26:40 GMT; domain=.github.com; path=/; HttpOnl
+
+$ node app   # gren-lang/node ecf18b1
+| header | values (each cut to 40 characters) | expected |
 |---|---|---|
-| `date` | Just ["Mon", "28 Sep 2026 12:00:00 GMT"] | Just ["Mon, 28 Sep 2026 12:00:00 GMT"] |
-| `set-cookie` | Just ["b=2"] | Just ["a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT", "b=2"] |
+| `date` | 2: ["Mon", "28 Sep 2026 11:26:35 GMT"] | 1: the date |
+| `set-cookie` | 2: ["logged_in=no; expires=Tue", "28 Sep 2027 11:26:41 GMT; domain=.github"] | one per cookie, each whole |
 ```
+
+GitHub sent three cookies. `send` keeps only the last one and cuts it in two
+at its `expires`.
 
 ## Cause
 
@@ -119,8 +131,12 @@ for (const [name, list] of Object.entries(values)) {
 }
 ```
 
-With this change in `node-head` the program prints the expected column in both
-rows.
+With this change in `node-head` the program gives what `curl` sees:
+
+```
+| `date` | 1: ["Mon, 28 Sep 2026 11:26:45 GMT"] | 1: the date |
+| `set-cookie` | 3: ["_gh_sess=w4Awl4kjIZ20t2CyOmVm4hFVV96%2Fh", "_octo=GH1.1.131319305.1790594810; expire", "logged_in=no; expires=Tue, 28 Sep 2027 1"] | one per cookie, each whole |
+```
 
 The trade-off: `fetch` has already joined any other repeated header with
 `", "` before Gren sees it, so under this fix a header sent twice (as

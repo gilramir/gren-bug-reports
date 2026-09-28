@@ -17,24 +17,33 @@ main =
                     Stream.writeLineAsBytes line env.stdout
                         |> Task.onError (\_ -> Task.succeed env.stdout)
 
-                url =
-                    "http://127.0.0.1:" ++ (Array.get 2 env.args |> Maybe.withDefault "") ++ "/"
-
                 row headers name expected =
-                    "| `" ++ name ++ "` | " ++ Debug.toString (Dict.get name headers) ++ " | " ++ expected ++ " |"
+                    let
+                        values =
+                            Dict.get name headers |> Maybe.withDefault []
+                    in
+                    "| `"
+                        ++ name
+                        ++ "` | "
+                        ++ String.fromInt (Array.length values)
+                        ++ ": "
+                        ++ Debug.toString (Array.map (String.takeFirst 40) values)
+                        ++ " | "
+                        ++ expected
+                        ++ " |"
             in
             Node.endSimpleProgram
-                (HttpClient.get url
+                (HttpClient.get "https://github.com"
                     |> HttpClient.expectAnything
                     |> HttpClient.send http
                     |> Task.andThen
                         (\response ->
                             print
                                 (String.join "\n"
-                                    [ "| header | result | expected |"
+                                    [ "| header | values (each cut to 40 characters) | expected |"
                                     , "|---|---|---|"
-                                    , row response.headers "date" "Just [\"Mon, 28 Sep 2026 12:00:00 GMT\"]"
-                                    , row response.headers "set-cookie" "Just [\"a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT\", \"b=2\"]"
+                                    , row response.headers "date" "1: the date"
+                                    , row response.headers "set-cookie" "one per cookie, each whole"
                                     ]
                                 )
                         )

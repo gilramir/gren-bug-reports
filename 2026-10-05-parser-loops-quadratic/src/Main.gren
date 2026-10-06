@@ -1,0 +1,65 @@
+module Main exposing (main)
+
+{-| Parses each file named on the command line with `Compiler.Parse.Module.parser`
+and prints how long the parse took, not counting reading the file.
+-}
+
+import Bytes
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Module as Module
+import FileSystem
+import FileSystem.Path as Path
+import Init
+import Node exposing (Environment)
+import Stream
+import String.Parser.Advanced as Parser
+import Task exposing (Task)
+import Time
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Init.await FileSystem.initialize <| \fsPermission ->
+        let
+            say text =
+                Stream.writeLineAsBytes text env.stdout
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+
+            row file =
+                FileSystem.readFile fsPermission (Path.fromPosixString file)
+                    |> Task.map (\bytes -> Maybe.withDefault "" (Bytes.toString bytes))
+                    |> Task.onError (\_ -> Task.succeed "")
+                    |> Task.andThen (\source -> timeParse source)
+                    |> Task.andThen
+                        (\result -> say ("| " ++ file ++ " | " ++ result.answer ++ " | " ++ String.fromInt result.ms ++ " |"))
+        in
+        Node.endSimpleProgram
+            (Array.foldl (\file before -> before |> Task.andThen (\_ -> row file))
+                (say "| file | parsed | parse ms |\n|---|---|--:|")
+                (Array.dropFirst 2 env.args)
+            )
+
+
+timeParse : String -> Task Never { answer : String, ms : Int }
+timeParse source =
+    Time.now
+        |> Task.andThen
+            (\t0 ->
+                let
+                    answer =
+                        when Parser.run Module.parser Context.empty source is
+                            Ok ast ->
+                                String.fromInt (Array.length ast.values) ++ " values"
+
+                            Err _ ->
+                                "error"
+                in
+                Time.now
+                    |> Task.map (\t1 -> { answer = answer, ms = Time.posixToMillis t1 - Time.posixToMillis t0 })
+            )

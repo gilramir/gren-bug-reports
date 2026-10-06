@@ -1,0 +1,48 @@
+module Main exposing (main)
+
+import Array.Builder as Builder
+import Dict exposing (Dict)
+import Node
+import Stream
+import Task exposing (Task)
+import Time
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        let
+            say text =
+                Stream.writeLineAsBytes text env.stdout
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+
+            ms f =
+                Time.now
+                    |> Task.andThen (\t0 -> Task.succeed {} |> Task.map f |> Task.andThen (\n -> Time.now |> Task.map (\t1 -> { n = n, ms = Time.posixToMillis t1 - Time.posixToMillis t0 })))
+
+            row n =
+                let
+                    dict =
+                        Array.foldl (\i d -> Dict.set i i d) Dict.empty (Array.range 1 n)
+
+                    cell r =
+                        String.fromInt r.ms ++ " (" ++ String.fromInt r.n ++ ")"
+                in
+                ms (\_ -> Array.length (Dict.keys dict))
+                    |> Task.andThen (\k -> ms (\_ -> Array.length (Dict.values dict)) |> Task.map (\v -> cell k ++ " | " ++ cell v))
+                    |> Task.andThen (\kv -> ms (\_ -> Array.length (keysWithBuilder dict)) |> Task.map (\b -> kv ++ " | " ++ cell b))
+                    |> Task.andThen (\times -> say ("| " ++ String.fromInt n ++ " | " ++ times ++ " |"))
+        in
+        Node.endSimpleProgram
+            (Array.foldl (\n before -> before |> Task.andThen (\_ -> row n))
+                (say "| entries | Dict.keys ms | Dict.values ms | keysWithBuilder ms |\n|---|---|---|---|")
+                [ 10000, 20000, 40000, 80000 ]
+            )
+
+
+{-| The fix: collect the keys in an `Array.Builder`. -}
+keysWithBuilder : Dict k v -> Array k
+keysWithBuilder dict =
+    Dict.foldl (\key _ builder -> Builder.pushLast key builder) (Builder.empty (Dict.count dict)) dict
+        |> Builder.toArray

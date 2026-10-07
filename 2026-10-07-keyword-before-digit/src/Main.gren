@@ -1,0 +1,43 @@
+module Main exposing (main)
+
+-- `keyword "let"` against names that begin with the letters `l`, `e`, `t`.
+-- None of them is the keyword `let`, so every row should be `Err`.
+
+import Node
+import Stream
+import String.Parser as P
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        let
+            row source =
+                source
+                    ++ "\t"
+                    ++ (when P.run (P.keyword "let" |> P.skip P.end) source is
+                            Ok _ ->
+                                "Ok"
+
+                            Err _ ->
+                                "Err"
+                       )
+                    ++ "\t"
+                    ++ (when P.run (P.keyword "let") source is
+                            Ok _ ->
+                                "Ok"
+
+                            Err _ ->
+                                "Err"
+                       )
+        in
+        Node.endSimpleProgram
+            ([ "letters", "let_", "let1", "let9x", "let\u{0661}", "let\u{00E9}s", "let" ]
+                |> Array.map row
+                |> String.join "\n"
+                |> Stream.writeLineAsBytes
+                |> (\write -> write env.stdout)
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+            )

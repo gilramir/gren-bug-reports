@@ -1,0 +1,69 @@
+module Main exposing (main)
+
+import Compiler.Ast.Source as Src
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Module as Module
+import Init
+import Node exposing (Environment)
+import Show exposing (show)
+import Stream
+import String.Parser.Advanced as Parser
+import Task exposing (Task)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+{-| Each case is the body of `v`, a multi-line string whose content is indented
+as far as its quotes. -}
+cases : Array { name : String, literal : String }
+cases =
+    [ { name = "plain", literal = "    \"\"\"\n    one\n    two\n    \"\"\"" }
+    , { name = "trailing-blank-line", literal = "    \"\"\"\n    one\n\n    \"\"\"" }
+    , { name = "trailing-spaces", literal = "    \"\"\"\n    one   \n    \"\"\"" }
+    , { name = "escaped-space", literal = "    \"\"\"\n    one\\u{0020}\n    \"\"\"" }
+    , { name = "escaped-newline", literal = "    \"\"\"\n    one\\u{000A}two\n    \"\"\"" }
+    ]
+
+
+{-| The module `run.sh` gives `gren make`, with `v` as the case's literal. -}
+probe : String -> String
+probe literal =
+    "module Probe exposing (v)\n\n\nv : String\nv =\n" ++ literal ++ "\n"
+
+
+parsed : String -> String
+parsed literal =
+    when Parser.run Module.parser Context.empty (probe literal) is
+        Ok m ->
+            when Array.first m.values is
+                Just decl ->
+                    when decl.value.value.body.value is
+                        Src.StringLiteral s ->
+                            show s
+
+                        _ ->
+                            "(not a string)"
+
+                Nothing ->
+                    "(no value)"
+
+        Err _ ->
+            "refused"
+
+
+report : Environment -> Task Never {}
+report env =
+    cases
+        |> Array.map (\c -> c.name ++ "\t" ++ parsed c.literal ++ "\t" ++ probe c.literal)
+        |> String.join "\u{0000}"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

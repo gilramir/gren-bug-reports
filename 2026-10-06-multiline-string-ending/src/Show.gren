@@ -1,0 +1,23 @@
+module Show exposing (show)
+
+
+{-| A string as a literal, with each newline written `\n`, so that the two
+answers can be compared on one line. -}
+show : String -> String
+show s =
+    "\""
+        ++ String.foldl
+            (\c acc ->
+                when c is
+                    '\n' ->
+                        acc ++ "\\n"
+
+                    '"' ->
+                        acc ++ "\\\""
+
+                    _ ->
+                        acc ++ String.fromChar c
+            )
+            ""
+            s
+        ++ "\""

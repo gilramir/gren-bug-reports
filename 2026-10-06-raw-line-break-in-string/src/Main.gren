@@ -1,0 +1,67 @@
+module Main exposing (main)
+
+import Compiler.Ast.Source as Src
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Module as Module
+import Init
+import Node exposing (Environment)
+import Show exposing (show)
+import Stream
+import String.Parser.Advanced as Parser
+import Task exposing (Task)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Node.endSimpleProgram (report env)
+
+
+{-| Each case is the body of `v`. The line breaks in the last three are written
+as themselves, inside a single-line string or a character. -}
+cases : Array { name : String, literal : String }
+cases =
+    [ { name = "escaped", literal = "    \"one\\ntwo\"" }
+    , { name = "raw-lf-in-string", literal = "    \"one\ntwo\"" }
+    , { name = "raw-crlf-in-string", literal = "    \"one\r\ntwo\"" }
+    , { name = "raw-lf-in-char", literal = "    String.fromChar '\n'" }
+    ]
+
+
+probe : String -> String
+probe literal =
+    "module Probe exposing (v)\n\n\nv : String\nv =\n" ++ literal ++ "\n"
+
+
+parsed : String -> String
+parsed literal =
+    when Parser.run Module.parser Context.empty (probe literal) is
+        Ok m ->
+            when Array.first m.values is
+                Just decl ->
+                    when decl.value.value.body.value is
+                        Src.StringLiteral s ->
+                            show s
+
+                        _ ->
+                            "accepted"
+
+                Nothing ->
+                    "(no value)"
+
+        Err _ ->
+            "refused"
+
+
+report : Environment -> Task Never {}
+report env =
+    cases
+        |> Array.map (\c -> c.name ++ "\t" ++ parsed c.literal ++ "\t" ++ probe c.literal)
+        |> String.join "\u{0000}"
+        |> (\text -> Stream.writeLineAsBytes text env.stdout)
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})

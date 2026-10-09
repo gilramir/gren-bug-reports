@@ -1,0 +1,41 @@
+module Main exposing (main)
+
+-- String.indices, firstIndexOf and lastIndexOf on ASCII strings, where a code
+-- point and a code unit are the same thing, beside 7.5.0's unit functions,
+-- documented as the same functions over code units.
+
+import Node
+import Stream
+import Task
+
+
+show : Maybe Int -> String
+show m =
+    when m is
+        Just i ->
+            "Just " ++ String.fromInt i
+
+        Nothing ->
+            "Nothing"
+
+
+showA : Array Int -> String
+showA a =
+    "[" ++ String.join "," (Array.map String.fromInt a) ++ "]"
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Node.endSimpleProgram
+            ([ "indices \"aa\" \"aaaa\"\t" ++ showA (String.indices "aa" "aaaa") ++ "\t" ++ showA (String.unitIndices "aa" "aaaa")
+             , "indices \"aa\" \"aaa\"\t" ++ showA (String.indices "aa" "aaa") ++ "\t" ++ showA (String.unitIndices "aa" "aaa")
+             , "firstIndexOf \"\" \"abc\"\t" ++ show (String.firstIndexOf "" "abc") ++ "\t" ++ show (String.unitFirstIndexOf "" "abc")
+             , "firstIndexOf \"\" \"\"\t" ++ show (String.firstIndexOf "" "") ++ "\t" ++ show (String.unitFirstIndexOf "" "")
+             , "lastIndexOf \"\" \"abc\"\t" ++ show (String.lastIndexOf "" "abc") ++ "\t" ++ show (String.unitLastIndexOf "" "abc")
+             ]
+                |> String.join "\n"
+                |> (\s -> Stream.writeLineAsBytes s env.stdout)
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+            )

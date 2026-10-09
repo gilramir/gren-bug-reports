@@ -1,0 +1,38 @@
+module Write exposing (main)
+
+-- A write to a closed stream is rejected by the JavaScript stream. The task
+-- should fail once, with `Cancelled`, and the program go on from `onError`,
+-- which sleeps 200 ms. A second process prints a line after 100 ms, so it
+-- should print first.
+
+import Node
+import Process
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        let
+            say line =
+                Stream.writeLineAsBytes line env.stdout
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+        in
+        Node.endSimpleProgram
+            (Process.spawn (Process.sleep 100 |> Task.andThen (\_ -> say "100 ms have passed"))
+                |> Task.andThen (\_ -> Stream.identityTransformation)
+                |> Task.andThen
+                    (\t ->
+                        Stream.closeWritable (Stream.writable t)
+                            |> Task.andThen (\_ -> Stream.write "x" (Stream.writable t))
+                            |> Task.andThen (\_ -> say "the write succeeded")
+                            |> Task.onError
+                                (\e ->
+                                    say ("the write failed: " ++ Stream.errorToString e)
+                                        |> Task.andThen (\_ -> Process.sleep 200)
+                                        |> Task.andThen (\_ -> say "slept 200 ms")
+                                )
+                    )
+            )

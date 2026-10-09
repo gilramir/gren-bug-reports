@@ -1,0 +1,27 @@
+module Read exposing (main)
+
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        let
+            say line =
+                Stream.writeLineAsBytes line env.stdout
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+        in
+        Node.endSimpleProgram
+            (Stream.identityTransformation
+                |> Task.andThen
+                    (\t ->
+                        Stream.cancelWritable "boom" (Stream.writable t)
+                            |> Task.andThen (\_ -> Stream.read (Stream.readable t))
+                            |> Task.andThen (\v -> say ("read: " ++ v))
+                            |> Task.onError (\e -> say ("the read failed: " ++ Stream.errorToString e))
+                            |> Task.andThen (\_ -> say "after the read")
+                    )
+            )

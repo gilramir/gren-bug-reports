@@ -1,0 +1,22 @@
+module Big exposing (value)
+
+
+value : Int
+value =
+    pick 3
+
+
+pick : Int -> Int
+pick k =
+    when k is
+        0 ->
+            1
+
+        1 ->
+            2
+
+        2 ->
+            3
+
+        _ ->
+            0

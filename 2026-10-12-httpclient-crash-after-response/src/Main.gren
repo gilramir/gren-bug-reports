@@ -1,0 +1,23 @@
+module Main exposing (main)
+
+-- A crash in the task that continues HttpClient.send. The Debug.todo should
+-- end the program with its message, as it does after Task.succeed {}.
+
+import HttpClient
+import Init
+import Node
+import Stream
+import Task
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Init.await HttpClient.initialize <| \http ->
+            Node.endSimpleProgram
+                (HttpClient.get "data:text/plain,hello"
+                    |> HttpClient.expectString
+                    |> HttpClient.send http
+                    |> Task.andThen (\_ -> Debug.todo "after the response")
+                    |> Task.onError (\_ -> Stream.writeLineAsBytes "the request failed" env.stdout |> Task.map (\_ -> {}) |> Task.onError (\_ -> Task.succeed {}))
+                )

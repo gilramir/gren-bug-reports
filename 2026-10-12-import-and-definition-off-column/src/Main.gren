@@ -1,0 +1,46 @@
+module Main exposing (main)
+
+-- Modules whose imports do not start at column 1, or whose definition does not
+-- start in its annotation's column, which `gren make` refuses, parsed by
+-- compiler-common's module parser.
+
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Module as PM
+import Node
+import Stream
+import String.Parser.Advanced as Parser
+import Task
+
+
+row : String -> String -> String
+row name source =
+    name
+        ++ "\t"
+        ++ (when Parser.run PM.parser Context.empty source is
+                Ok _ ->
+                    "parses"
+
+                Err _ ->
+                    "refused"
+           )
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Node.endSimpleProgram
+            ([ row "import at column 1" "module M exposing (..)\n\nimport Dict\n"
+             , row "import at column 3" "module M exposing (..)\n\n  import Dict\n"
+             , row "second import at column 4" "module M exposing (..)\n\nimport Dict\n   import Set\n"
+             , row "import after a block comment" "module M exposing (..)\n\n{- c -} import Dict\n"
+             , row "declaration at column 3" "module M exposing (..)\n\n  x = 1\n"
+             , row "definition under its annotation" "module M exposing (..)\n\nbar : a -> a\nbar x =\n    x\n"
+             , row "definition at column 3 under its annotation" "module M exposing (..)\n\nbar : a -> a\n  bar x =\n    x\n"
+             , row "definition after a block comment" "module M exposing (..)\n\nbar : a -> a\n{- c -} bar x =\n    x\n"
+             , row "let definition after a block comment" "module M exposing (..)\n\nfoo =\n    let\n        x : a\n        {- c -} x =\n            1\n    in\n    x\n"
+             ]
+                |> String.join "\n"
+                |> (\s -> Stream.writeLineAsBytes s env.stdout)
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+            )

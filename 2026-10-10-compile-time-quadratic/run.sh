@@ -21,8 +21,6 @@ row() {
     big=$(secs Big)
     echo "| $1 | $2 | $main | $big |"
 }
-for n in 4000 16000 64000; do row declarations $n; done
-for n in 4000 16000 64000; do row let $n; done
 for n in 1000 4000 16000; do row when-int $n; done
 for n in 1000 4000 16000; do row variants $n; done
 for n in 1000 4000 16000; do row when-variants $n; done

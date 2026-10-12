@@ -1,0 +1,26 @@
+module Big exposing (value)
+
+
+value : Int
+value =
+    x0 + x3
+
+
+x0 : Int
+x0 =
+    0
+
+
+x1 : Int
+x1 =
+    1
+
+
+x2 : Int
+x2 =
+    2
+
+
+x3 : Int
+x3 =
+    3

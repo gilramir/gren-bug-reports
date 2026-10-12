@@ -5,14 +5,7 @@ import sys
 
 shape, n = sys.argv[1], int(sys.argv[2])
 
-if shape == "declarations":
-    # N top-level values, and one more that adds two of them.
-    body = "value : Int\nvalue =\n    x0 + x{}\n\n\n".format(n - 1) + "\n\n\n".join(f"x{k} : Int\nx{k} =\n    {k}" for k in range(n))
-elif shape == "let":
-    # One let of N bindings, each the one before plus one.
-    lets = "\n\n".join(f"        x{k} =\n            {'0' if k == 0 else f'x{k - 1} + 1'}" for k in range(n))
-    body = f"value : Int\nvalue =\n    let\n{lets}\n    in\n    x{n - 1}"
-elif shape == "when-int":
+if shape == "when-int":
     # A when of N Int branches and a wildcard.
     branches = "\n\n".join(f"        {k} ->\n            {k + 1}" for k in range(n))
     body = f"value : Int\nvalue =\n    pick 3\n\n\npick : Int -> Int\npick k =\n    when k is\n{branches}\n\n        _ ->\n            0"

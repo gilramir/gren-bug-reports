@@ -1,0 +1,125 @@
+module Main exposing (main)
+
+import Array.Builder as Builder exposing (Builder)
+import Node
+import Stream
+import String.Parser as P exposing (Parser, Step(..))
+import Task exposing (Task)
+import Time
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        let
+            say text =
+                Stream.writeLineAsBytes text env.stdout
+                    |> Task.map (\_ -> {})
+                    |> Task.onError (\_ -> Task.succeed {})
+
+            ms f =
+                Time.now
+                    |> Task.andThen (\t0 -> Task.succeed {} |> Task.map f |> Task.andThen (\n -> Time.now |> Task.map (\t1 -> { n = n, ms = Time.posixToMillis t1 - Time.posixToMillis t0 })))
+
+            cell r =
+                String.fromInt r.ms ++ " (" ++ String.fromInt r.n ++ ")"
+
+            row n =
+                let
+                    source =
+                        String.repeat n "1; "
+
+                    items =
+                        Array.range 1 n
+                in
+                ms (\_ -> parsed (P.run documented source))
+                    |> Task.andThen (\a -> ms (\_ -> parsed (P.run withBuilder source)) |> Task.map (\b -> [ a, b ]))
+                    |> Task.andThen (\cs -> ms (\_ -> folded (resultFoldl (\i acc -> Ok (Array.pushLast i acc)) [] items)) |> Task.map (\c -> cs ++ [ c ]))
+                    |> Task.andThen (\cs -> ms (\_ -> folded (sequenceMap Ok items)) |> Task.map (\c -> cs ++ [ c ]))
+                    |> Task.andThen (\cs -> say ("| " ++ String.fromInt n ++ " | " ++ String.join " | " (Array.map cell cs) ++ " |"))
+        in
+        Node.endSimpleProgram
+            (Array.foldl (\n before -> before |> Task.andThen (\_ -> row n))
+                (say "| n | loop, as documented | loop, with a Builder | fold, pushing | fold, into a Builder |\n|---|---|---|---|---|")
+                [ 10000, 20000, 40000, 80000 ]
+            )
+
+
+parsed : Result e (Array a) -> Int
+parsed result =
+    when result is
+        Ok xs ->
+            Array.length xs
+
+        Err _ ->
+            -1
+
+
+folded : Result e (Array a) -> Int
+folded =
+    parsed
+
+
+{-| `String.Parser.loop`'s own example, with `int` as the statement. -}
+documented : Parser (Array Int)
+documented =
+    P.loop [] statementsHelp
+
+
+statementsHelp : Array Int -> Parser (Step (Array Int) (Array Int))
+statementsHelp stmts =
+    P.oneOf
+        [ P.succeed (\stmt -> Loop (Array.pushLast stmt stmts))
+            |> P.keep P.int
+            |> P.skip P.spaces
+            |> P.skip (P.token ";")
+            |> P.skip P.spaces
+        , P.succeed {}
+            |> P.map (\_ -> Done stmts)
+        ]
+
+
+{-| The same loop with the statements in an `Array.Builder`. -}
+withBuilder : Parser (Array Int)
+withBuilder =
+    P.loop (Builder.empty 0) builderHelp
+
+
+builderHelp : Builder Int -> Parser (Step (Builder Int) (Array Int))
+builderHelp stmts =
+    P.oneOf
+        [ P.succeed (\stmt -> Loop (Builder.pushLast stmt stmts))
+            |> P.keep P.int
+            |> P.skip P.spaces
+            |> P.skip (P.token ";")
+            |> P.skip P.spaces
+        , P.succeed {}
+            |> P.map (\_ -> Done (Builder.toArray stmts))
+        ]
+
+
+{-| A fold through `Result`, as a library writes it when `core` has none. -}
+resultFoldl : (i -> a -> Result e a) -> a -> Array i -> Result e a
+resultFoldl callback initialAcc items =
+    Array.foldl (\item acc -> acc |> Result.andThen (callback item)) (Ok initialAcc) items
+
+
+{-| What the report proposes for `Result`. -}
+sequenceMap : (a -> Result err ok) -> Array a -> Result err (Array ok)
+sequenceMap fn array =
+    sequenceMapHelp fn array 0 (Builder.empty (Array.length array))
+
+
+sequenceMapHelp : (a -> Result err ok) -> Array a -> Int -> Builder ok -> Result err (Array ok)
+sequenceMapHelp fn array idx oks =
+    when Array.get idx array is
+        Nothing ->
+            Ok (Builder.toArray oks)
+
+        Just x ->
+            when fn x is
+                Ok val ->
+                    sequenceMapHelp fn array (idx + 1) (Builder.pushLast val oks)
+
+                Err err ->
+                    Err err

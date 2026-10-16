@@ -1,0 +1,51 @@
+module Main exposing (main)
+
+-- Bodies and arguments on rows of their own, parsed by compiler-common's
+-- module parser. The second column is what `gren make` does with the same
+-- module.
+
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Module as PM
+import Node
+import Stream
+import String.Parser.Advanced as Parser
+import Task
+
+
+row : String -> String -> String -> String
+row name grenMake body =
+    let
+        source =
+            "module M exposing (..)\n\n\nadd a b =\n    a + b\n\n\n" ++ body
+    in
+    name
+        ++ "\t"
+        ++ grenMake
+        ++ "\t"
+        ++ (when Parser.run PM.parser Context.empty source is
+                Ok _ ->
+                    "parses"
+
+                Err _ ->
+                    "refused"
+           )
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Node.endSimpleProgram
+            ([ "\tgren make\tcompiler-common"
+             , row "argument left of its function, top level" "compiles" "t =\n    add 1\n  2\n"
+             , row "argument left of its function, in a let" "compiles" "v =\n    let\n        b =\n            add 1\n          2\n    in\n    b\n"
+             , row "argument left of its function, in a branch" "compiles" "w s =\n    when s is\n        Just q ->\n            add q\n          2\n\n        Nothing ->\n            0\n"
+             , row "body at its name's column, on the let's row" "refuses" "f =\n    let a =\n        1\n    in\n    a\n"
+             , row "body left of its name, on the let's row" "refuses" "f =\n    let a =\n      1\n    in\n    a\n"
+             , row "destructuring's body left of its pattern" "refuses" "f =\n    let\n        { a } =\n      { a = 1 }\n    in\n    a\n"
+             , row "destructuring's body at its pattern's column" "refuses" "f =\n    let { a } =\n        { a = 1 }\n    in\n    a\n"
+             ]
+                |> String.join "\n"
+                |> (\s -> Stream.writeLineAsBytes s env.stdout)
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+            )

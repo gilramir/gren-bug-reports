@@ -1,0 +1,73 @@
+module Main exposing (main)
+
+-- Type annotations parsed by compiler-common, printed as the tree it built:
+-- `->` with parentheses around it, and an application as its head followed by
+-- its arguments in brackets.
+
+import Compiler.Ast.Source as AST
+import Compiler.Parse.Context as Context
+import Compiler.Parse.Declaration as PD
+import Node
+import Stream
+import String.Parser.Advanced as Parser
+import Task
+
+
+showType : AST.Type -> String
+showType t =
+    when t.value is
+        AST.TLambda { from, to } ->
+            "(" ++ showType from ++ " -> " ++ showType to ++ ")"
+
+        AST.TVar v ->
+            v
+
+        AST.TType { name, args } ->
+            if Array.isEmpty args then
+                name.value
+
+            else
+                name.value ++ String.join "" (Array.map (\a -> " [" ++ showType a ++ "]") args)
+
+        AST.TParens inner ->
+            "(" ++ showType inner ++ ")"
+
+        _ ->
+            "?"
+
+
+row : String -> String
+row annotation =
+    let
+        source =
+            "x : " ++ annotation ++ "\nx =\n    x\n"
+
+        tree =
+            when Parser.run PD.parser Context.empty source is
+                Ok { value = PD.Value { signature = Just { type_ } } } ->
+                    showType type_
+
+                Ok _ ->
+                    "not a value"
+
+                Err _ ->
+                    "refused"
+    in
+    annotation ++ "\t" ++ tree
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        Node.endSimpleProgram
+            ([ row "Dict String Int"
+             , row "Dict String Int -> Int"
+             , row "Result String Int -> Maybe Int -> Bool"
+             , row "Maybe Maybe Int"
+             , row "Dict String (Int -> Int)"
+             ]
+                |> String.join "\n"
+                |> (\s -> Stream.writeLineAsBytes s env.stdout)
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+            )

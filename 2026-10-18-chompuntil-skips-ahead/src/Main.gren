@@ -1,0 +1,130 @@
+module Main exposing (main)
+
+import Node
+import Stream
+import String.Parser as P exposing (Parser)
+import Task
+
+
+{-| Each case runs `prefix` (a token, or nothing) and then a chomper over
+`source`, and reports the string the chomper consumed and the offset, row and
+column it left the parser at. -}
+type alias Case =
+    { name : String
+    , source : String
+    , prefix : String
+    , chomper : Parser {}
+    , expected : String
+    }
+
+
+cases : Array Case
+cases =
+    [ { name = "chompUntil \"c\""
+      , source = "abc"
+      , prefix = ""
+      , chomper = P.chompUntil "c"
+      , expected = "\"ab\" offset 2, row 1, col 3"
+      }
+    , { name = "token \"a\", then chompUntil \"c\""
+      , source = "abc"
+      , prefix = "a"
+      , chomper = P.chompUntil "c"
+      , expected = "\"b\" offset 2, row 1, col 3"
+      }
+    , { name = "token \"abcd\", then chompUntil \"h\""
+      , source = "abcdefghij"
+      , prefix = "abcd"
+      , chomper = P.chompUntil "h"
+      , expected = "\"efg\" offset 7, row 1, col 8"
+      }
+    , { name = "chompUntilEndOr \"\\n\""
+      , source = "-- c\nxyz"
+      , prefix = ""
+      , chomper = P.chompUntilEndOr "\n"
+      , expected = "\"-- c\" offset 4, row 1, col 5"
+      }
+    , { name = "token \"x \", then chompUntilEndOr \"\\n\""
+      , source = "x -- c\nyz"
+      , prefix = "x "
+      , chomper = P.chompUntilEndOr "\n"
+      , expected = "\"-- c\" offset 6, row 1, col 7"
+      }
+    , { name = "token \"x \", then lineComment \"--\""
+      , source = "x -- c\nyz"
+      , prefix = "x "
+      , chomper = P.lineComment "--"
+      , expected = "\"-- c\" offset 6, row 1, col 7"
+      }
+    ]
+
+
+run : Case -> String
+run c =
+    let
+        parser =
+            P.succeed (\chomped offset pos -> { chomped = chomped, offset = offset, pos = pos })
+                |> P.skip (if c.prefix == "" then P.succeed {} else P.token c.prefix)
+                |> P.keep (P.getChompedString c.chomper)
+                |> P.keep P.getOffset
+                |> P.keep P.getPosition
+    in
+    when P.run parser c.source is
+        Ok r ->
+            "\"" ++ escape r.chomped ++ "\" offset " ++ String.fromInt r.offset ++ ", row " ++ String.fromInt r.pos.row ++ ", col " ++ String.fromInt r.pos.col
+
+        Err deadEnds ->
+            "error at " ++ String.join ", " (Array.map (\d -> "row " ++ String.fromInt d.row ++ " col " ++ String.fromInt d.col) deadEnds)
+
+
+escape : String -> String
+escape s =
+    String.replace "\n" "\\n" s
+
+
+{-| A line comment, then the next line: what a language's whitespace parser
+does after every `--` comment. -}
+commentThenNextLine : String -> String
+commentThenNextLine source =
+    let
+        parser =
+            P.succeed {}
+                |> P.skip (P.token "x")
+                |> P.skip P.spaces
+                |> P.skip (P.lineComment "--")
+                |> P.skip (P.chompChar '\n')
+                |> P.skip (P.token "y")
+                |> P.skip P.end
+    in
+    when P.run parser source is
+        Ok _ ->
+            "parses"
+
+        Err deadEnds ->
+            "error at " ++ String.join ", " (Array.map (\d -> "row " ++ String.fromInt d.row ++ " col " ++ String.fromInt d.col) deadEnds)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram <| \env ->
+        let
+            line c =
+                "| `" ++ c.name ++ "` | `\"" ++ escape c.source ++ "\"` | " ++ run c ++ " | " ++ c.expected ++ " |"
+
+            text =
+                String.join "\n"
+                    ([ "| parser | source | answer | expected |"
+                     , "|---|---|---|---|"
+                     ]
+                        ++ Array.map line cases
+                        ++ [ ""
+                           , "`token \"x\" |> skip spaces |> skip (lineComment \"--\") |> skip (chompChar '\\n') |> skip (token \"y\") |> skip end`"
+                           , ""
+                           , "on \"x -- c\\ny\": " ++ commentThenNextLine "x -- c\ny"
+                           ]
+                    )
+        in
+        Stream.writeLineAsBytes text env.stdout
+            |> Task.map (\_ -> {})
+            |> Task.onError (\_ -> Task.succeed {})
+            |> Node.endSimpleProgram

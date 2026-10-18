@@ -4,7 +4,10 @@
 **Found against:** `gren` 0.6.6, `gren-lang/compiler-common` 3.0.0 (and `main` at
 `11ef95a`, which has the same parser), `gren-lang/core` 7.4.2,
 `gren-lang/node` 6.1.3, node 22
-**Filed:** not yet.
+**Filed:** opened by the maintainer as
+[compiler-common#40](https://github.com/gren-lang/compiler-common/issues/40),
+fixed on `main` by `fbb5972` except for record patterns (see
+[After `fbb5972`](#after-fbb5972)).
 
 `Compiler.Parse.Module.parser` takes time quadratic in the number of top-level
 declarations in a module, and in the number of items in a list literal. A
@@ -27,7 +30,9 @@ written as one list literal, or a long `when`. Every tool built on
 1. It writes the inputs into `inputs/`. `WideN.gren` is a module of N one-line
    declarations, `xK =\n    K`. `ListN.gren` is one declaration whose body is
    a list of N integers, one per line. N is 10,000, 20,000, 40,000 and 80,000.
-   The largest is 1.7 MB.
+   The largest is 1.7 MB. `RpN.gren` is one function whose body is a `when` on
+   a record pattern of N fields, written on one line. N is 8,000, 16,000,
+   32,000 and 64,000.
 2. It builds `src/Main.gren` with `--optimize` against `compiler-common` 3.0.0,
    and runs it over the inputs.
 3. It builds the same program against `compiler-common` 3.0.0 with
@@ -62,14 +67,18 @@ The output on one machine (times vary between runs and machines):
 
 | input | 3.0.0, ms | with `builder.patch`, ms |
 |---|--:|--:|
-| `Wide10000.gren` | 271 | 235 |
-| `Wide20000.gren` | 856 | 467 |
-| `Wide40000.gren` | 3,810 | 835 |
-| `Wide80000.gren` | 14,541 | 1,700 |
-| `List10000.gren` | 206 | 169 |
-| `List20000.gren` | 740 | 320 |
-| `List40000.gren` | 3,818 | 665 |
-| `List80000.gren` | 13,824 | 1,310 |
+| `Wide10000.gren` | 246 | 217 |
+| `Wide20000.gren` | 756 | 429 |
+| `Wide40000.gren` | 3,509 | 797 |
+| `Wide80000.gren` | 12,943 | 1,589 |
+| `List10000.gren` | 176 | 162 |
+| `List20000.gren` | 650 | 309 |
+| `List40000.gren` | 3,352 | 621 |
+| `List80000.gren` | 12,431 | 1,241 |
+| `Rp8000.gren` | 84 | 92 |
+| `Rp16000.gren` | 219 | 103 |
+| `Rp32000.gren` | 3,286 | 199 |
+| `Rp64000.gren` | 14,459 | 443 |
 
 ## Cause
 
@@ -173,3 +182,43 @@ as JSON, or the parse error) on 5,383 `.gren` files:
 - On 219 files both give the same error.
 - The other 38 are pathological nesting tests that overflow the stack under
   both. Only the JavaScript stack trace differs.
+
+## After `fbb5972`
+
+`fbb5972` on `main` makes declarations and list items linear. Record pattern
+fields, `Pattern.recordInnerLoop`, are still quadratic, and slower than
+before. Measured with this `src/Main.gren` and these inputs, built against
+`compiler-common` at `fbb5972` and at its parent `d8dedc6` as a `local:`
+package, with core 7.6.0 and node 6.2.0, since `fbb5972` needs core 7.5.0 or
+later:
+
+| input | `d8dedc6`, ms | `fbb5972`, ms |
+|---|--:|--:|
+| `Wide80000.gren` | 12,925 | 1,613 |
+| `List80000.gren` | 12,325 | 1,197 |
+| `Rp8000.gren` | 87 | 107 |
+| `Rp16000.gren` | 216 | 710 |
+| `Rp32000.gren` | 3,266 | 4,738 |
+| `Rp64000.gren` | 14,363 | 19,744 |
+
+After a field name, `recordInnerLoop` chooses its next step with a
+`Parser.oneOf`. The two branches that end the loop at a `}` compute their
+result in the argument of `Parser.succeed`:
+
+```gren
+Parser.succeed (Parser.Done <| Builder.toArray <| Builder.pushLast { field = field, pattern = Nothing } acc)
+    |> Parser.skip (Parser.chompChar '}' (ExpectedChar '}'))
+```
+
+That argument is evaluated when the `oneOf` is built, for every field, before
+the `}` is looked for. So for every field, even one followed by a `,`:
+
+1. The `Done` branch pushes the field onto `acc` and converts `acc` to an
+   array.
+2. The `Loop` branch, the one that matches at a `,`, then pushes the same field
+   onto the same `acc`.
+
+A builder that has been converted, or pushed to already, copies itself before
+the next push, so step 2 copies every field collected so far. Step 1 is extra
+work on top of that, which is why it is slower than before.
+

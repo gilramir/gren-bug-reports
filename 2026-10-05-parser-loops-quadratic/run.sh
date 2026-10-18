@@ -12,6 +12,8 @@ fi
 
 # inputs/WideN.gren: N one-line top-level declarations.
 # inputs/ListN.gren: one declaration whose body is a list of N integers.
+# inputs/RpN.gren: one function whose body is a `when` on a record pattern of
+# N fields, written on one line.
 mkdir -p inputs
 for n in 10000 20000 40000 80000; do
     awk -v n="$n" 'BEGIN {
@@ -24,8 +26,16 @@ for n in 10000 20000 40000 80000; do
         printf "    ]\n"
     }' > "inputs/List$n.gren"
 done
+for n in 8000 16000 32000 64000; do
+    awk -v n="$n" 'BEGIN {
+        printf "module Rp%d exposing (..)\n\n\nf r =\n    when r is\n        { a0", n
+        for (k = 1; k < n; k++) printf ", a%d", k
+        printf " } ->\n            0\n"
+    }' > "inputs/Rp$n.gren"
+done
 files="inputs/Wide10000.gren inputs/Wide20000.gren inputs/Wide40000.gren inputs/Wide80000.gren
-inputs/List10000.gren inputs/List20000.gren inputs/List40000.gren inputs/List80000.gren"
+inputs/List10000.gren inputs/List20000.gren inputs/List40000.gren inputs/List80000.gren
+inputs/Rp8000.gren inputs/Rp16000.gren inputs/Rp32000.gren inputs/Rp64000.gren"
 
 echo "## compiler-common 3.0.0"
 echo

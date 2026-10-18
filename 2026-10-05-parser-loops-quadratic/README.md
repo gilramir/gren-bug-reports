@@ -11,8 +11,8 @@ fixed on `main` by `fbb5972` except for record patterns (see
 
 `Compiler.Parse.Module.parser` takes time quadratic in the number of top-level
 declarations in a module, and in the number of items in a list literal. A
-module of 80,000 one-line declarations takes 14.5 s to parse, and a list of
-80,000 integers takes 13.8 s. Each doubling of the input multiplies the time
+module of 80,000 one-line declarations takes 12.9 s to parse, and a list of
+80,000 integers takes 12.4 s. Each doubling of the input multiplies the time
 by about four. The same happens with the branches of a `when`, the fields of a
 record, the variants of a custom type, and every other construct the parser
 collects with a loop.

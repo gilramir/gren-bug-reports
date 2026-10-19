@@ -7,7 +7,8 @@
 **Filed:** opened by the maintainer as
 [compiler-common#40](https://github.com/gren-lang/compiler-common/issues/40),
 fixed on `main` by `fbb5972` except for record patterns (see
-[After `fbb5972`](#after-fbb5972)).
+[After `fbb5972`](#after-fbb5972)); `358b45d` fixes record patterns except for
+fields with a pattern of their own (see [After `358b45d`](#after-358b45d)).
 
 `Compiler.Parse.Module.parser` takes time quadratic in the number of top-level
 declarations in a module, and in the number of items in a list literal. A
@@ -222,3 +223,51 @@ A builder that has been converted, or pushed to already, copies itself before
 the next push, so step 2 copies every field collected so far. Step 1 is extra
 work on top of that, which is why it is slower than before.
 
+
+## After `358b45d`
+
+`358b45d` moves the two `Done` branches' push and conversion behind their `}`.
+That makes `{ a0, a1, ... }` linear. A record pattern whose fields have
+patterns of their own, `{ a0 = x0, a1 = x1, ... }`, is still quadratic.
+
+`./after-358b45d.sh` builds this `src/Main.gren` against `compiler-common` at
+`358b45d`'s parent, at `358b45d`, and at `358b45d` with `after-358b45d.patch`
+applied. Each is a `local:` package, and all three use core 7.6.0 and node
+6.2.0. It runs each build on `RpN.gren` and on `RpEqN.gren`, which is the same
+pattern with ` = xK` after each field. These are its numbers:
+
+| input | parent, ms | `358b45d`, ms | `358b45d` + patch, ms |
+|---|--:|--:|--:|
+| `Rp8000.gren` | 111 | 65 | 65 |
+| `Rp16000.gren` | 737 | 99 | 100 |
+| `Rp32000.gren` | 4,847 | 239 | 249 |
+| `Rp64000.gren` | 20,175 | 405 | 419 |
+| `RpEq8000.gren` | 274 | 187 | 141 |
+| `RpEq16000.gren` | 2,094 | 865 | 306 |
+| `RpEq32000.gren` | 14,656 | 5,261 | 539 |
+| `RpEq64000.gren` | 61,384 | 21,025 | 1,133 |
+
+The two `Loop` branches, the ones that match at a `,`, still push in the
+argument of `Parser.succeed`:
+
+```gren
+Parser.succeed (Parser.Loop <| Builder.pushLast { field = field, pattern = Nothing } acc)
+    |> Parser.skip (Parser.chompChar ',' (ExpectedChar ','))
+```
+
+The `oneOf` after a field name is built for every field, so this push runs for
+every field. For a field without a pattern it is the branch that matches, and
+`acc` is pushed to once. For a field with one, the `=` branch matches, and
+after the pattern the inner `oneOf`'s `,` branch pushes onto the same `acc` a
+second time. That push copies every field collected so far.
+
+`after-358b45d.patch` moves both `Loop` pushes behind their `,`, as `358b45d`
+did for the `Done` pushes:
+
+```gren
+Parser.succeed acc
+    |> Parser.skip (Parser.chompChar ',' (ExpectedChar ','))
+    |> Parser.map (\a -> Parser.Loop <| Builder.pushLast { field = field, pattern = Nothing } a)
+```
+
+It changes only when each push runs, not what is pushed.

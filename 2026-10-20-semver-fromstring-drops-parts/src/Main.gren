@@ -1,0 +1,43 @@
+module Main exposing (main)
+
+import Node
+import SemanticVersion
+import Stream
+import Task
+
+
+inputs : Array String
+inputs =
+    [ "1.2.3"
+    , "1.2.3.x"
+    , "1.x.2.3"
+    , "1.2.3."
+    , "1.-1.2.3"
+    , "x.1.2.3"
+    , "1.2.3.4"
+    ]
+
+
+show : String -> String
+show input =
+    let
+        answer =
+            when SemanticVersion.fromString input is
+                Just v ->
+                    "Just " ++ SemanticVersion.toString v
+
+                Nothing ->
+                    "Nothing"
+    in
+    "fromString \"" ++ input ++ "\" = " ++ answer ++ "\n"
+
+
+main : Node.SimpleProgram {}
+main =
+    Node.defineSimpleProgram
+        (\env ->
+            Stream.writeStringAsBytes (String.join "" (Array.map show inputs)) env.stdout
+                |> Task.map (\_ -> {})
+                |> Task.onError (\_ -> Task.succeed {})
+                |> Node.endSimpleProgram
+        )

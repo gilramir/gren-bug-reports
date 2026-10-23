@@ -1,0 +1,12 @@
+diff --git a/builder/src/Reporting.hs b/builder/src/Reporting.hs
+index e2e58276..b8d4d942 100644
+--- a/builder/src/Reporting.hs
++++ b/builder/src/Reporting.hs
+@@ -162,6 +162,7 @@ trackBuild style callback =
+ 
+         _ <- forkIO $
+           do
++            threadDelay 300000
+             takeMVar mvar
+             putStrFlush "Compiling ..."
+             buildLoop chan 0

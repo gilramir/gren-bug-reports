@@ -1,0 +1,24 @@
+diff --git a/builder/src/Reporting.hs b/builder/src/Reporting.hs
+index e2e58276..46bedfdf 100644
+--- a/builder/src/Reporting.hs
++++ b/builder/src/Reporting.hs
+@@ -159,6 +159,7 @@ trackBuild style callback =
+     Terminal mvar ->
+       do
+         chan <- newChan
++        finished <- newEmptyMVar
+ 
+         _ <- forkIO $
+           do
+@@ -166,9 +167,11 @@ trackBuild style callback =
+             putStrFlush "Compiling ..."
+             buildLoop chan 0
+             putMVar mvar ()
++            putMVar finished ()
+ 
+         result <- callback (Key (writeChan chan . Left))
+         writeChan chan (Right result)
++        takeMVar finished
+         return result
+ 
+ data BMsg

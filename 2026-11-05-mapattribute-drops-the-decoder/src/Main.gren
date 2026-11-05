@@ -1,0 +1,30 @@
+module Main exposing (main)
+
+import Browser
+import Html exposing (Html)
+import Html.Attributes
+import Html.Events
+
+
+type Msg
+    = Clicked
+    | Wrapped Msg
+
+
+main : Program {} (Array String) Msg
+main =
+    Browser.element
+        { init = \{} -> { model = [], command = Cmd.none }
+        , update = \msg model -> { model = Array.pushLast (Debug.toString msg) model, command = Cmd.none }
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }
+
+
+view : Array String -> Html Msg
+view model =
+    Html.div []
+        [ Html.button [ Html.Events.onClick Clicked ] [ Html.text "plain" ]
+        , Html.button [ Html.Attributes.map Wrapped (Html.Events.onClick Clicked) ] [ Html.text "mapped" ]
+        , Html.pre [] [ Html.text (String.join "\n" model) ]
+        ]

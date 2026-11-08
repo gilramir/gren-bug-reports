@@ -3,8 +3,9 @@
 Against `gren` 0.6.6, `gren-lang/test` 5.0.0, `gren-lang/core` 7.4.2,
 `gren-lang/node` 6.1.3, node 22.
 
-`./run.sh` builds and runs a program over `gren-lang/test`'s internal `Queue`
-module, copied unchanged from the published package, which prints:
+`./run.sh` builds and runs `src/Main.gren`, a program over `gren-lang/test`'s
+internal `Queue` module. `src/Queue.gren` is that module copied unchanged from
+the published `gren-lang/test` 5.0.0, since it is not exposed. It prints:
 
 | on `singleton 3 \|> enqueue 4 \|> updateFront (\_ -> Nothing)` | result | expected |
 |---|---|---|

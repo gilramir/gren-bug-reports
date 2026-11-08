@@ -1,0 +1,33 @@
+module Main exposing (main)
+
+import Node
+import Queue
+import Stream
+import Task
+
+
+main : Node.SimpleProgram {}
+main =
+    Node.defineSimpleProgram <| \env ->
+        let
+            q =
+                Queue.singleton 3
+                    |> Queue.enqueue 4
+                    |> Queue.updateFront (\_ -> Nothing)
+
+            rest =
+                (Queue.dequeue q).rest
+        in
+        [ "| on `singleton 3 |> enqueue 4 |> updateFront (\\_ -> Nothing)` | result |"
+        , "|---|---|"
+        , "| `toArray` | `" ++ Debug.toString (Queue.toArray q) ++ "` |"
+        , "| `size` | `" ++ Debug.toString (Queue.size q) ++ "` |"
+        , "| `front` | `" ++ Debug.toString (Queue.front q) ++ "` |"
+        , "| `(dequeue q).first` | `" ++ Debug.toString (Queue.dequeue q).first ++ "` |"
+        , "| `toArray (dequeue q).rest` | `" ++ Debug.toString (Queue.toArray rest) ++ "` |"
+        ]
+            |> String.join "\n"
+            |> (\text -> Stream.writeLineAsBytes text env.stdout)
+            |> Task.map (\_ -> {})
+            |> Task.onError (\_ -> Task.succeed {})
+            |> Node.endSimpleProgram

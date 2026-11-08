@@ -1,0 +1,112 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "elmPackages.elm@0.19.1": {
+      "last_modified": "2026-08-22T18:41:35Z",
+      "resolved": "github:NixOS/nixpkgs/174eb786fb68e3a13e4e535a3deea479a0c07a6a#elmPackages.elm",
+      "source": "devbox-search",
+      "version": "0.19.1",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/myr5mg23km0vgbpa2qmywa0spdzq5fcn-elm-0.19.1",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/q4sbvlf4xkrrq7akjvzjnr2c49m0mj98-elm-0.19.1-doc"
+            }
+          ],
+          "store_path": "/nix/store/myr5mg23km0vgbpa2qmywa0spdzq5fcn-elm-0.19.1"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/cvg73byjfnj77bzcvi3ryg8isl91nzzb-elm-0.19.1",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/qhyw9n0v6z7j5j85chlbrdffyy50f148-elm-0.19.1-doc"
+            }
+          ],
+          "store_path": "/nix/store/cvg73byjfnj77bzcvi3ryg8isl91nzzb-elm-0.19.1"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/3kbaspxb1df4l95fz6jc85gpyy8paj01-elm-0.19.1",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/d1440biqqf3dfhw5aggjaxfhxyal0z4p-elm-0.19.1-doc"
+            }
+          ],
+          "store_path": "/nix/store/3kbaspxb1df4l95fz6jc85gpyy8paj01-elm-0.19.1"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/rs7m2nww5lmkv1hj813jmvr3ay7mhsxs-elm-0.19.1",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/kpavaxsrmbp4hr34aargilfci5kyc9b5-elm-0.19.1-doc"
+            }
+          ],
+          "store_path": "/nix/store/rs7m2nww5lmkv1hj813jmvr3ay7mhsxs-elm-0.19.1"
+        }
+      }
+    },
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2026-11-06T15:06:19Z",
+      "resolved": "github:NixOS/nixpkgs/4fe25e12eb9f4c744966dd3de5a05246cf098601?lastModified=1793977579"
+    },
+    "nodejs@22": {
+      "last_modified": "2026-11-06T15:06:19Z",
+      "plugin_version": "0.0.5",
+      "resolved": "github:NixOS/nixpkgs/4fe25e12eb9f4c744966dd3de5a05246cf098601#nodejs_22",
+      "source": "devbox-search",
+      "version": "22.23.4",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/dwm5sm9a4287fdim8cxyc5v6v8sq6iww-nodejs-22.23.4",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/dwm5sm9a4287fdim8cxyc5v6v8sq6iww-nodejs-22.23.4"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/bwkaqhf9650zqdk497yifczi89xxg573-nodejs-22.23.4",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/bwkaqhf9650zqdk497yifczi89xxg573-nodejs-22.23.4"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lr2c5f2y7q62pzfrkclgsy5yj31hsn5l-nodejs-22.23.4",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lr2c5f2y7q62pzfrkclgsy5yj31hsn5l-nodejs-22.23.4"
+        }
+      }
+    }
+  }
+}

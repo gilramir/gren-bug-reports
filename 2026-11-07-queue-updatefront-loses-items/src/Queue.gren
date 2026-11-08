@@ -1,0 +1,245 @@
+module Queue exposing
+    ( Queue, empty, singleton
+    , isEmpty, size, enqueue, dequeue, front
+    , fromArray, toArray
+    , map, filter, updateFront
+    )
+
+{-| NOTE: Vendored from turboMaCk/queue 1.1.0
+
+---
+
+Queue is simple FIFO (first in, first out) datastructure.
+
+
+# Type
+
+@docs Queue, empty, singleton
+
+
+# Query
+
+@docs isEmpty, size, enqueue, dequeue, front
+
+
+# Arrays
+
+@docs fromArray, toArray
+
+
+# Transformations
+
+@docs map, filter, updateFront
+
+-}
+
+-- Types
+
+
+type alias Rear a =
+    Array a
+
+
+type alias Front a =
+    Array a
+
+
+{-| Equality checks (`==`) on `Queue` are unreliable due to dynamic distribution of elements.
+
+If you need equality checks use [`toArray`](#toArray).
+
+    Queue.toArray firstQueue == Queue.toArray secondQueue
+
+-}
+type Queue a
+    = Queue { front : (Front a), rear : (Rear a) }
+
+
+{-| private pseudo-constructor
+-}
+queue : Front a -> Rear a -> Queue a
+queue fl rl =
+    when fl is
+        [] ->
+            Queue { front = (Array.reverse rl), rear = [] }
+
+        _ ->
+            Queue { front = fl, rear = rl }
+
+
+{-| Construct empty `Queue`
+-}
+empty : Queue a
+empty =
+    Queue { front = [], rear = [] }
+
+
+{-| Construct Queue containing single value
+
+    Queue.toArray (Queue.singleton 1) == [ 1 ]
+
+-}
+singleton : a -> Queue a
+singleton a =
+    Queue { front = [ a ], rear = [] }
+
+
+
+-- Query
+
+
+{-| Determine if `Queue` is empty
+
+    Queue.isEmpty Queue.empty == True
+
+    Queue.isEmpty (Queue.fromArray [ 1, 2 ]) == False
+
+-}
+isEmpty : Queue a -> Bool
+isEmpty (Queue { front = fl, rear = rl }) =
+    Array.isEmpty fl && Array.isEmpty rl
+
+
+{-| Get size of `Queue`
+
+    Queue.size Queue.empty == 0
+
+    Queue.size (Queue.fromArray [ 1, 2 ]) == 2
+
+-}
+size : Queue a -> Int
+size (Queue q) =
+    Array.length q.front + Array.length q.rear
+
+
+{-| Add item to `Queue`
+
+    Queue.size (Queue.enqueue 1 Queue.empty) == 1
+
+    Queue.size (Queue.enqueue 1 (Queue.fromArray [ 1, 2 ])) == 3
+
+-}
+enqueue : a -> Queue a -> Queue a
+enqueue a (Queue q) =
+    queue q.front <| Array.pushFirst a q.rear
+
+
+{-| Take item from `Queue`
+
+    Queue.dequeue Queue.empty == ( Nothing, Queue.empty )
+
+    Queue.dequeue (Queue.fromArray [ 1 ]) == ( Just 1, Queue.empty )
+
+-}
+dequeue : Queue a -> { first : Maybe a, rest : Queue a }
+dequeue (Queue q) =
+    when Array.popFirst q.front is
+        Nothing ->
+            { first = Nothing, rest = empty }
+
+        Just { first = head, rest = tail } ->
+            { first = Just head, rest = queue tail q.rear }
+
+
+{-| Ask for front item without removing it from `Queue`
+
+    Queue.front Queue.empty == Nothing
+
+    Queue.front (Queue.fromArray [ 1, 2 ]) == Just 1
+
+-}
+front : Queue a -> Maybe a
+front (Queue q) =
+    Array.first q.front
+
+
+{-| Update value at the front of the queue
+
+    Queue.toArray (Queue.updateFront (Maybe.map (\x -> x + 1)) (Queue.singleton 3)) == [ 4 ]
+
+    Queue.toArray (Queue.updateFront (Maybe.map (\_ -> Just 42)) Queue.empty) == [ 42 ]
+
+    Queue.toArray (Queue.updateFront (Maybe.map (\_ -> Nothing)) (Queue.singleton 3)) == []
+
+-}
+updateFront : (Maybe a -> Maybe a) -> Queue a -> Queue a
+updateFront f (Queue q) =
+    let
+        update_ maybe t =
+            when f maybe is
+                Just a ->
+                    Array.pushFirst a t
+
+                Nothing ->
+                    t
+    in
+    when Array.popFirst q.front is
+        Just { first = h, rest = t } ->
+            Queue { front = (update_ (Just h) t), rear = q.rear }
+
+        Nothing ->
+            Queue { front = (update_ Nothing []), rear = q.rear }
+
+
+
+-- Arrays
+
+
+{-| Build `Queue` from `Array`
+
+    Queue.fromArray [] == Queue.empty
+
+    Queue.size (Queue.fromArray [ 1, 2, 3 ]) == 3
+
+-}
+fromArray : Array a -> Queue a
+fromArray list =
+    Queue { front = list, rear = [] }
+
+
+{-| Convert `Queue` to `Array`
+
+    Queue.toArray (Queue.fromArray []) == []
+
+    Queue.toArray (Queue.fromArray [ 1, 2, 3 ]) == [ 1, 2, 3 ]
+
+-}
+toArray : Queue a -> Array a
+toArray (Queue q) =
+    q.front ++ Array.reverse q.rear
+
+
+
+-- Transform
+
+
+{-| Map function over `Queue`
+
+    Queue.toArray (Queue.map identity (Queue.fromArray [ 1, 2 ])) == [ 1, 2 ]
+
+    Queue.toArray (Queue.map ((+) 1) (Queue.fromArray [ 1, 2 ])) == [ 2, 3 ]
+
+-}
+map : (a -> b) -> Queue a -> Queue b
+map fc (Queue q) =
+    let
+        map_ =
+            Array.map fc
+    in
+    queue (map_ q.front) (map_ q.rear)
+
+
+{-| Filter items items in `Queue`
+
+    Queue.toArray (Queue.filter identity (Queue.fromArray [ True, False ])) == [ True ]
+
+    Queue.toArray (Queue.filter ((<) 1) (Queue.fromArray [ 1, 2 ])) == [ 2 ]
+
+-}
+filter : (a -> Bool) -> Queue a -> Queue a
+filter fc (Queue q) =
+    let
+        f =
+            Array.keepIf fc
+    in
+    queue (f q.front) (f q.rear)
